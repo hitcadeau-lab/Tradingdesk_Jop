@@ -66,6 +66,20 @@
         }
       </section>
 
+      ${
+        TD.demo && TD.demo.isPreview()
+          ? `<section class="panel settings demo-panel">
+        <h2>Voorbeelddata <span class="badge warn">alleen in de preview</span></h2>
+        <p class="muted small">Oefentrades op echte koersen van de afgelopen dagen, met TP's, een stop loss en break-even die echt geraakt zijn, plus een setup-melding. Zo kun je Meldingen, Trades en Portfolio uitproberen.</p>
+        <div class="row gap">
+          <button class="btn small primary" id="demo-load">Voorbeelddata laden</button>
+          <button class="btn small" id="demo-clear" ${TD.demo.hasDemo() ? "" : "disabled"}>Voorbeelddata verwijderen</button>
+          <span class="muted small" id="demo-out"></span>
+        </div>
+      </section>`
+          : ""
+      }
+
       <section class="panel settings">
         <h2>Leerschool</h2>
         <p>${school.answered} opdrachten beantwoord, ${school.answered ? Math.round((school.correct / school.answered) * 100) : 0}% goed, beste reeks ${school.best}.</p>
@@ -162,6 +176,30 @@
           TD.desktopUI.banner(r);
         } else out.textContent = r.message || "Controleren mislukt.";
       });
+
+    // ---- voorbeelddata (preview) ----
+    const dl = root.querySelector("#demo-load");
+    if (dl) {
+      dl.addEventListener("click", async () => {
+        const out = root.querySelector("#demo-out");
+        dl.disabled = true;
+        if (TD.demo.hasDemo()) TD.demo.clear();
+        out.textContent = "Koersen ophalen en oefentrades maken…";
+        try {
+          const n = await TD.demo.load();
+          out.textContent = `${n} oefentrades geladen. Kijk bij de bel rechtsboven, Trades en Portfolio.`;
+        } catch (e) {
+          out.textContent = "Laden mislukt: " + e.message;
+        }
+        dl.disabled = false;
+        root.querySelector("#demo-clear").disabled = !TD.demo.hasDemo();
+      });
+      root.querySelector("#demo-clear").addEventListener("click", () => {
+        const n = TD.demo.clear();
+        root.querySelector("#demo-out").textContent = `${n} oefentrades en hun meldingen verwijderd.`;
+        root.querySelector("#demo-clear").disabled = true;
+      });
+    }
 
     // ---- leerschool ----
     root.querySelector("#st-reset-school").addEventListener("click", () => {
