@@ -7,7 +7,7 @@ De methode volgt *Range Trading 101* en *Technical Analysis 101*. Communiceer me
 ## Werkwijze: eerst preview, pas op "push" live
 
 1. Alle wijzigingen gaan eerst naar de **preview-branch** `claude/keen-gates-4sbkc3`. Push daar zonder te vragen.
-2. De gebruiker bekijkt ze lokaal met `./preview.sh` (http://localhost:8765, haalt elke 10 s de nieuwste versie op). Zeg na elke push dat hij de pagina kan verversen (Cmd+R).
+2. De gebruiker bekijkt ze lokaal met `./preview.sh` (http://localhost:8765, haalt elke 10 s de nieuwste versie op; `preview-server.py` geeft koersdata van Kraken en Yahoo door, omdat de browser die niet zelf mag lezen). Zeg na elke push dat hij de pagina kan verversen (Cmd+R).
 3. **Pas als de gebruiker "push" zegt**, gaat de wijziging naar `main`:
    - Verhoog de versie op beide plekken, gelijk: `js/version.js` en `desktop/package.json` (patch voor kleine wijzigingen, minor voor nieuwe functies).
    - Verhoog `tradingdesk.shellVersion` in `desktop/package.json` alleen als `desktop/main.js` of `desktop/preload.js` is veranderd. De gebruiker moet dan een nieuwe `.dmg` installeren; vertel dat erbij.

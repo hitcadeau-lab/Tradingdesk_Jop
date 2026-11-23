@@ -293,6 +293,17 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .menu button { text-align: left; background: transparent; border: none; padding: 9px 10px; border-radius: 6px; cursor: pointer; }
 .menu button:hover { background: rgba(41, 98, 255, .18); }
 
+/* ---------- exchange (papier) ---------- */
+.ex-section { border-left: 4px solid var(--warn); }
+.ex-opts[hidden] { display: none; }
+.ex-out { margin-top: 10px; }
+.ex-msg p { margin: 4px 0; font-size: 13px; }
+.ex-dl dd { white-space: normal; }
+.ex-position { border-left: 4px solid var(--warn); }
+.ex-align { margin: 10px 0; padding: 10px 12px; border-radius: 6px; background: rgba(245, 166, 35, .08); border: 1px solid rgba(245, 166, 35, .3); }
+.ex-align p { margin: 0 0 8px; }
+.badge.paper { background: rgba(245, 166, 35, .15); color: var(--warn); border-color: rgba(245, 166, 35, .4); margin-left: 4px; }
+
 /* ---------- meldingen ---------- */
 .bell-link { position: relative; padding: 7px 10px; }
 .bell-link.active { background: rgba(41, 98, 255, .2); border-color: var(--accent); color: #fff; }
@@ -306,6 +317,8 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .inbox-item.sl { border-left-color: var(--neg); }
 .inbox-item.be { border-left-color: var(--muted); }
 .inbox-item.setup { border-left-color: var(--warn); }
+.inbox-item.fill { border-left-color: var(--accent); }
+.inbox-item.fill .inbox-icon { color: #82a8ff; }
 .inbox-icon { width: 26px; height: 26px; border-radius: 50%; display: flex; align-items: center; justify-content: center; flex-shrink: 0; font-size: 12px; background: var(--panel-2); }
 .inbox-item.tp .inbox-icon { color: var(--pos); }
 .inbox-item.sl .inbox-icon { color: var(--neg); }

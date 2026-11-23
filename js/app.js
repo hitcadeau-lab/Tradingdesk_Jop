@@ -83,6 +83,7 @@
     paintBell();
   }
   if (TD.tradeAlerts) TD.tradeAlerts.start();
+  if (TD.paper) TD.paper.start();
   if (TD.notifier) {
     TD.notifier.onChange(paintCount);
     paintCount();

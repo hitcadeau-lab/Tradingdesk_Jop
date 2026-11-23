@@ -26,7 +26,7 @@
   }
 
   function stocksAvailable() {
-    return !!(window.tdDesktop && window.tdDesktop.fetchJSON);
+    return !!(TD.net && TD.net.canProxy());
   }
 
   async function binance(id, tf, limit) {
@@ -55,7 +55,7 @@
       throw new Error(window.tdDesktop ? "Voor aandelen-data heb je de nieuwste app-versie nodig: installeer de nieuwste .dmg." : "Aandelen-data werkt alleen in de Mac-app.");
     const conf = TF[tf];
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(id)}?interval=${conf.yahoo}&range=${conf.yahooRange}`;
-    const data = await window.tdDesktop.fetchJSON(url);
+    const data = await TD.net.json(url);
     const r = data && data.chart && data.chart.result && data.chart.result[0];
     if (!r || !r.timestamp) throw new Error(`Geen koersdata voor ${id} bij Yahoo Finance.`);
     const q = r.indicators.quote[0];

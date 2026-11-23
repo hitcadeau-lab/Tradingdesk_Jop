@@ -6,14 +6,15 @@
   let filter = "all";
   let unsub = null;
 
-  const ICON = { tp: "▲", sl: "✕", be: "＝", setup: "◆" };
-  const KIND = { tp: "Take profit", sl: "Stop loss", be: "Break-even", setup: "Setup" };
+  const ICON = { tp: "▲", sl: "✕", be: "＝", setup: "◆", fill: "●" };
+  const KIND = { tp: "Take profit", sl: "Stop loss", be: "Break-even", setup: "Setup", fill: "Order" };
 
   // "Trade sluiten" bij trade-meldingen zolang de trade nog open staat.
   function closeBtn(n) {
     if (!n.tradeId || !["tp", "sl", "be"].includes(n.kind)) return "";
     const t = TD.store.getTrade(n.tradeId);
     if (!t) return "";
+    if (t.broker) return t.status === "open" ? `<a class="btn small" href="#/trades/${esc(t.id)}" data-open="${esc(n.id)}">Bekijk positie</a>` : `<span class="badge muted">Gesloten</span>`;
     if (t.status !== "open") return `<span class="badge muted">Gesloten</span>`;
     return `<a class="btn small primary" href="${esc(TD.tradeAlerts.closeLink(t))}" data-open="${esc(n.id)}">Trade sluiten</a>`;
   }

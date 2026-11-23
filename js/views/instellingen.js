@@ -3,6 +3,79 @@
   const { esc, download } = TD.util;
   const S = TD.store;
 
+  // ---------- Exchange (Kraken Futures, papier-modus) ----------
+  function exchangeHTML() {
+    if (!TD.paper) return "";
+    const s = TD.paper.summary();
+    const usd = (v) => v.toLocaleString("nl-NL", { style: "currency", currency: "USD" });
+    return `<section class="panel settings" id="ex-panel">
+      <h2>Exchange <span class="badge open">Kraken Futures</span></h2>
+      <label class="inline">Modus
+        <select id="ex-mode">
+          <option value="off" ${s.enabled ? "" : "selected"}>Uit (alleen journal)</option>
+          <option value="paper" ${s.enabled ? "selected" : ""}>Papier-modus (echte koersen, nepgeld)</option>
+        </select>
+      </label>
+      <p class="muted small">In papier-modus kun je bij een nieuwe trade een order bij Kraken Futures simuleren: limit- of markt-entry, stop loss, 50% op TP1 met de stop naar break-even, en de rest op TP2. Alles op de echte Kraken-koersen, met Kraken-fees (0,02% maker, 0,05% taker) en de EU-retailmarges (max 10x). Je journal wordt automatisch bijgewerkt als de trade dicht is.</p>
+      ${
+        s.enabled
+          ? `<div class="kpis small">
+          <div class="kpi"><span>Papier-saldo</span><strong>${usd(s.balance)}</strong><em>start ${usd(s.startBalance)}</em></div>
+          <div class="kpi"><span>Equity</span><strong class="${s.unrealized >= 0 ? "pos" : "neg"}">${usd(s.equity)}</strong><em>incl. ${usd(s.unrealized)} open</em></div>
+          <div class="kpi"><span>Vrije marge</span><strong>${usd(s.available)}</strong><em>${usd(s.usedMargin)} in gebruik</em></div>
+          <div class="kpi"><span>Trades</span><strong>${s.open} open</strong><em>${s.pending} wachtend · ${s.closed} gesloten</em></div>
+        </div>
+        ${
+          +S.getSettings().startingCapital !== +s.startBalance || S.getSettings().currency !== "$"
+            ? `<div class="ex-align">
+          <p class="warn-text small">Je journal rekent met een startkapitaal van ${esc(S.getSettings().currency)}${esc(S.getSettings().startingCapital)}, je papier-account met US$ ${esc(s.startBalance)}. Zet ze gelijk, zodat risico, positiegrootte en R in je journal kloppen met je papier-trades.</p>
+          <button class="btn small" id="ex-align">Journal-startkapitaal op US$ ${esc(s.startBalance)} zetten</button>
+        </div>`
+            : ""
+        }
+        <div class="grid g4">
+          <label>Standaard leverage<select id="ex-lev">${[1, 2, 3, 5, 10].map((l) => `<option value="${l}" ${+s.leverage === l ? "selected" : ""}>${l}x</option>`).join("")}</select></label>
+          <label>Startsaldo (USD)<input type="number" id="ex-start" min="100" step="100" value="${esc(s.startBalance)}"></label>
+        </div>
+        <div class="row gap" style="margin-top:10px">
+          <button class="btn small" id="ex-reset">Papier-account resetten</button>
+          <span class="muted small" id="ex-out"></span>
+        </div>`
+          : ""
+      }
+      <p class="muted small">Stap 2 en 3 (je echte Kraken-account koppelen) komen later. Er wordt nu nooit een echte order geplaatst.</p>
+    </section>`;
+  }
+
+  function bindExchange(root) {
+    const mode = root.querySelector("#ex-mode");
+    if (!mode) return;
+    mode.addEventListener("change", () => {
+      TD.paper.setConfig({ enabled: mode.value === "paper" });
+      render(root);
+    });
+    const align = root.querySelector("#ex-align");
+    if (align)
+      align.addEventListener("click", () => {
+        S.setSettings({ startingCapital: TD.paper.account().startBalance, currency: "$" });
+        render(root);
+      });
+    const lev = root.querySelector("#ex-lev");
+    if (lev) lev.addEventListener("change", () => TD.paper.setConfig({ leverage: +lev.value }));
+    const reset = root.querySelector("#ex-reset");
+    if (reset)
+      reset.addEventListener("click", () => {
+        const start = Math.max(100, +root.querySelector("#ex-start").value || 10000);
+        if (!confirm(`Papier-account resetten naar ${start} USD? De papier-geschiedenis wordt gewist (je journal blijft staan).`)) return;
+        try {
+          TD.paper.reset(start);
+          render(root);
+        } catch (e) {
+          root.querySelector("#ex-out").textContent = e.message;
+        }
+      });
+  }
+
   function render(root) {
     const s = S.getSettings();
     const d = S.desktop;
@@ -23,6 +96,8 @@
         <p class="muted small">Het startkapitaal is de basis van je saldo, rendement en equity curve in Portfolio. Het standaard risico wordt ingevuld bij elke nieuwe trade.</p>
         <p class="saved small" id="trading-saved" hidden>Opgeslagen</p>
       </section>
+
+      ${exchangeHTML()}
 
       <section class="panel settings">
         <h2>Opslag</h2>
@@ -85,6 +160,8 @@
         <p>${school.answered} opdrachten beantwoord, ${school.answered ? Math.round((school.correct / school.answered) * 100) : 0}% goed, beste reeks ${school.best}.</p>
         <button class="btn small danger" id="st-reset-school">Score resetten</button>
       </section>`;
+
+    bindExchange(root);
 
     // ---- trading ----
     const savedNote = root.querySelector("#trading-saved");

@@ -73,7 +73,7 @@
     if (running || !I.getConfig().trades) return;
     running = true;
     try {
-      const open = S.getTrades().filter((t) => t.status === "open" && TD.marketData.source(t.ticker));
+      const open = S.getTrades().filter((t) => t.status === "open" && !t.broker && TD.marketData.source(t.ticker)); // papier-trades meldt de papier-engine zelf
       const all = hitsAll();
       let changed = false;
       for (const t of open) {

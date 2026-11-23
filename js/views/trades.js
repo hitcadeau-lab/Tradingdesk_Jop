@@ -5,10 +5,11 @@
   const S = TD.store;
 
   function statusBadge(t) {
-    if (t.status === "open") return `<span class="badge open">Open</span>`;
-    if (t.outcome === "Cancelled") return `<span class="badge muted">Cancelled</span>`;
+    const paper = t.broker ? ` <span class="badge paper" title="Papier-order bij Kraken Futures">Papier</span>` : "";
+    if (t.status === "open") return `<span class="badge open">Open</span>${paper}`;
+    if (t.outcome === "Cancelled") return `<span class="badge muted">Cancelled</span>${paper}`;
     const cls = t.outcome === "Stop Loss" ? "neg" : "pos";
-    return `<span class="badge ${cls}">${esc(t.outcome || "Gesloten")}</span>`;
+    return `<span class="badge ${cls}">${esc(t.outcome || "Gesloten")}</span>${paper}`;
   }
 
   function scoreBadge(t) {
@@ -90,6 +91,61 @@
     return `<dt>Geraakt</dt><dd>${order
       .map(([k, l]) => `<span class="badge ${k === "sl" ? "neg" : k === "be" ? "muted" : "pos"}">${l}</span> <span class="muted small">${TD.util.stamp(h[k] * 1000)}</span>`)
       .join("<br>")}</dd>`;
+  }
+
+  // ---------------- Papier-positie (Kraken) ----------------
+  function paintPosition(root, t) {
+    const box = root.querySelector("#ex-position");
+    if (!box || !TD.paper) return;
+    const p = TD.paper.planForTrade(t.id);
+    if (!p) {
+      box.innerHTML = `<h2>Kraken Futures <span class="badge warn">papier</span></h2><p class="muted">Geen papier-order gevonden (mogelijk na een reset van het papier-account).</p>`;
+      return;
+    }
+    const usd = (v) => (v === null || v === undefined || isNaN(v) ? "—" : v.toLocaleString("nl-NL", { style: "currency", currency: "USD" }));
+    const st = { pending: '<span class="badge open">Wacht op fill</span>', open: `<span class="badge pos">Open${p.tp1Done ? " · TP1 gevuld" : ""}</span>`, closed: '<span class="badge muted">Gesloten</span>', cancelled: '<span class="badge muted">Geannuleerd</span>' }[p.status];
+    const un = TD.paper.unrealized(p, p.lastPrice);
+    box.innerHTML = `
+      <h2>Kraken Futures <span class="badge warn">papier</span> ${st} <span class="muted small">${esc(p.symbol)} · ${p.leverage}x</span></h2>
+      <div class="kpis small">
+        <div class="kpi"><span>Laatste prijs</span><strong>${p.lastPrice ?? "—"}</strong><em>${p.status === "pending" ? "entry " + p.entry : "gem. entry " + (p.avgEntry ?? "—")}</em></div>
+        <div class="kpi"><span>Positie</span><strong>${p.remaining || 0} / ${p.size}</strong><em>${p.side === "long" ? "Long" : "Short"}</em></div>
+        <div class="kpi"><span>Stop nu</span><strong>${+(+p.slCurrent).toPrecision(8)}</strong><em>${p.tp1Done ? "break-even" : "oorspronkelijke stop"} · liq ≈ ${+(+p.liq).toPrecision(6)}</em></div>
+        <div class="kpi"><span>Open PnL</span><strong class="${un >= 0 ? "pos" : "neg"}">${usd(un)}</strong><em>gerealiseerd ${usd(p.realized - p.fees)} (fees ${usd(p.fees)})</em></div>
+      </div>
+      <div class="row gap">
+        ${p.status === "pending" ? `<button class="btn small" data-ex="cancel">Order annuleren</button>` : ""}
+        ${p.status === "open" ? `<button class="btn small danger" data-ex="close">Positie sluiten (markt)</button>` : ""}
+        ${p.status === "open" && !p.tp1Done ? `<button class="btn small" data-ex="be">Stop nu naar break-even</button>` : ""}
+        <button class="btn small" data-ex="sync">Nu bijwerken</button>
+        <span class="muted small" id="ex-msg"></span>
+      </div>
+      <h3>Verloop</h3>
+      <table class="table"><thead><tr><th>Tijd</th><th>Gebeurtenis</th><th class="num">Prijs</th><th class="num">Fee</th><th class="num">Resultaat</th></tr></thead><tbody>
+        ${p.events
+          .slice()
+          .reverse()
+          .map((e) => `<tr><td>${TD.util.stamp(e.t * 1000)}</td><td class="wrap">${esc(e.text)}</td><td class="num">${e.price ?? "—"}</td><td class="num">${e.fee ? usd(e.fee) : "—"}</td><td class="num ${e.pnl > 0 ? "pos" : e.pnl < 0 ? "neg" : ""}">${e.pnl ? usd(e.pnl) : "—"}</td></tr>`)
+          .join("")}
+      </tbody></table>
+      <p class="muted small">Papier-modus: gesimuleerd op echte Kraken Futures-koersen (1-minuut-candles), bijgewerkt elke 15 seconden zolang de app open is. Funding wordt niet meegerekend.</p>`;
+    box.querySelectorAll("[data-ex]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const msg = box.querySelector("#ex-msg");
+        try {
+          if (b.dataset.ex === "cancel" && confirm("Papier-order annuleren?")) TD.paper.cancel(p.id);
+          if (b.dataset.ex === "close" && confirm("Papier-positie nu tegen de marktprijs sluiten?")) await TD.paper.closeMarket(p.id);
+          if (b.dataset.ex === "be") TD.paper.stopToBreakEven(p.id);
+          if (b.dataset.ex === "sync") {
+            msg.textContent = "Bijwerken…";
+            await TD.paper.sync();
+            msg.textContent = "";
+          }
+        } catch (e) {
+          msg.textContent = e.message;
+        }
+      })
+    );
   }
 
   // ---------------- Plan & marktbeeld ----------------
@@ -391,6 +447,22 @@
           </div>
         </section>
 
+        ${
+          !editing
+            ? `<section class="panel ex-section" id="ex-section" hidden>
+          <h2>Kraken Futures <span class="badge warn">papier</span> <span class="muted small" id="ex-sym"></span></h2>
+          <label class="chk"><input type="checkbox" id="ex-on" checked> Plaats deze trade ook als papier-order bij Kraken Futures</label>
+          <div class="grid g4 ex-opts">
+            <label>Entry
+              <select id="ex-entry"><option value="limit">Limit op je entry-prijs</option><option value="market">Markt (nu, tegen de huidige prijs)</option></select>
+            </label>
+            <label>Leverage<select id="ex-lev">${[1, 2, 3, 5, 10].map((l) => `<option value="${l}" ${TD.paper && +TD.paper.account().leverage === l ? "selected" : ""}>${l}x</option>`).join("")}</select></label>
+          </div>
+          <div id="ex-out" class="ex-out"><p class="muted small">Order wordt berekend…</p></div>
+        </section>`
+            : ""
+        }
+
         <div class="form-actions">
           <button type="submit" class="btn primary">${editing ? "Opslaan" : "Trade plaatsen"}</button>
           <a class="btn" href="${editing ? "#/trades/" + editing.id : "#/trades"}">Annuleren</a>
@@ -492,9 +564,58 @@
       return sug;
     }
 
+    // ----- Kraken papier-order (voorvertoning) -----
+    const exSec = root.querySelector("#ex-section");
+    let exTimer = null, exLast = null;
+    function exOpts() {
+      return { entryType: root.querySelector("#ex-entry").value, leverage: +root.querySelector("#ex-lev").value };
+    }
+    function paintExchange() {
+      if (!exSec) return;
+      const o = readTrade();
+      const sym = TD.paper && TD.paper.account().enabled && TD.kraken.toSymbol(o.ticker);
+      exSec.hidden = !sym;
+      if (!sym) return;
+      root.querySelector("#ex-sym").textContent = sym;
+      const on = root.querySelector("#ex-on").checked;
+      root.querySelector(".ex-opts").hidden = !on;
+      if (!on) {
+        root.querySelector("#ex-out").innerHTML = `<p class="muted small">Alleen in je journal, geen papier-order.</p>`;
+        return;
+      }
+      clearTimeout(exTimer);
+      exTimer = setTimeout(async () => {
+        const r = await TD.paper.preview(o, exOpts());
+        exLast = r;
+        const out = root.querySelector("#ex-out");
+        if (!out) return;
+        const p = r.plan, usd = (v) => (v === null || v === undefined || isNaN(v) ? "—" : v.toLocaleString("nl-NL", { style: "currency", currency: "USD" }));
+        out.innerHTML = `
+          ${r.errors && r.errors.length ? `<div class="ex-msg neg">${r.errors.map((e) => `<p>✗ ${esc(e)}</p>`).join("")}</div>` : ""}
+          ${r.warnings && r.warnings.length ? `<div class="ex-msg warn-text">${r.warnings.map((e) => `<p>! ${esc(e)}</p>`).join("")}</div>` : ""}
+          ${
+            p
+              ? `<dl class="dl ex-dl">
+              <dt>Huidige prijs</dt><dd>${esc(p.last)}</dd>
+              <dt>Orders</dt><dd>${p.side === "long" ? "Koop" : "Verkoop"} <strong>${esc(p.size)}</strong> ${esc(r.inst.base)} ${p.entryType === "market" ? "markt (≈ " + esc(p.entry) + ")" : "limit @ " + esc(p.entry)}<br>
+                Stop loss @ ${esc(p.sl)}${p.tp1 !== null ? `<br>TP1 50% @ ${esc(p.tp1)} → stop naar break-even` : ""}${p.tp2 !== null ? `<br>TP2 rest @ ${esc(p.tp2)}` : ""}</dd>
+              <dt>Positiewaarde</dt><dd>${usd(p.notional)} · marge ${usd(p.margin)} (${p.leverage}x)</dd>
+              <dt>Verlies bij SL</dt><dd class="neg">${usd(-p.lossAtSl)} <span class="muted">(${esc(o.riskPct)}% van je papier-saldo + fees)</span></dd>
+              <dt>Liquidatie ≈</dt><dd>${esc(+p.liq.toPrecision(6))} <span class="muted">(${p.side === "long" ? "onder" : "boven"} je stop: veilig)</span></dd>
+              <dt>Vrije marge</dt><dd>${usd(r.available)}</dd>
+            </dl>`
+              : ""
+          }`;
+      }, 400);
+    }
+    if (exSec) {
+      ["#ex-on", "#ex-entry", "#ex-lev"].forEach((sel) => root.querySelector(sel).addEventListener("change", paintExchange));
+    }
+
     form.addEventListener("input", () => {
       paintChecklist();
       paintCalc();
+      paintExchange();
     });
     form.addEventListener("change", (e) => {
       if (e.target.name === "status") {
@@ -504,6 +625,7 @@
       }
       paintChecklist();
       paintCalc();
+      paintExchange();
     });
     root.querySelector("#fill-tps").addEventListener("click", () => {
       const o = readTrade();
@@ -548,12 +670,54 @@
         o.plan = makePlan(o, S.riskAmount(o, S.computePortfolio()));
         o.snapshot = await marketSnapshot(o);
       }
+      // Papier-order bij Kraken: eerst controleren en bevestigen.
+      const wantsPaper = exSec && !exSec.hidden && root.querySelector("#ex-on").checked;
+      let exPrev = null;
+      if (wantsPaper) {
+        exPrev = await TD.paper.preview(o, exOpts());
+        if (exPrev.errors && exPrev.errors.length) {
+          const btn = form.querySelector('button[type="submit"]');
+          btn.disabled = false;
+          btn.textContent = "Trade plaatsen";
+          return alert("Papier-order niet mogelijk:\n\n" + exPrev.errors.join("\n"));
+        }
+        const p = exPrev.plan;
+        const ok = confirm(
+          `Papier-order bij Kraken Futures (${p.symbol}) plaatsen?\n\n` +
+            `${p.side === "long" ? "Koop" : "Verkoop"} ${p.size} ${p.entryType === "market" ? "markt" : "limit @ " + p.entry}\n` +
+            `Stop loss @ ${p.sl}\n${p.tp1 !== null ? `TP1 (50%) @ ${p.tp1}, daarna stop naar break-even\n` : ""}${p.tp2 !== null ? `TP2 (rest) @ ${p.tp2}\n` : ""}` +
+            `Leverage ${p.leverage}x · marge ${p.margin.toFixed(2)} USD\nVerlies bij SL ≈ ${p.lossAtSl.toFixed(2)} USD\n\nDit is papier-modus: er gaat geen echt geld om.`
+        );
+        if (!ok) {
+          const btn = form.querySelector('button[type="submit"]');
+          btn.disabled = false;
+          btn.textContent = "Trade plaatsen";
+          return;
+        }
+      }
       const saved = S.saveTrade(o);
+      if (saved && wantsPaper) {
+        try {
+          const plan = await TD.paper.place(saved, exOpts());
+          saved.broker = { mode: "paper", venue: "kraken", symbol: plan.symbol, planId: plan.id };
+          if (plan.entryType === "market") saved.entry = plan.avgEntry;
+          // Het vastgelegde plan rekent met het papier-account (risico en fill-prijs).
+          if (saved.plan) {
+            saved.plan.riskAmount = plan.riskAmount;
+            saved.plan.currency = "$";
+            if (plan.entryType === "market") saved.plan.entry = plan.avgEntry;
+          }
+          S.saveTrade(saved);
+        } catch (err) {
+          alert("De trade staat in je journal, maar de papier-order is niet geplaatst: " + err.message);
+        }
+      }
       if (saved) location.hash = "#/trades/" + saved.id;
     });
 
     paintChecklist();
     const sug0 = paintCalc();
+    paintExchange();
     if (autoPnl && sug0 !== null) {
       form.pnl.value = Math.round(sug0 * 100) / 100;
       paintCalc();
@@ -618,6 +782,8 @@
         <div class="kpi"><span>Saldo na trade</span><strong>${row ? money(row.endBalance) : "—"}</strong></div>
         <div class="kpi"><span>Checks</span><strong>${scoreBadge(t)}</strong></div>
       </div>
+
+      ${t.broker ? `<section class="panel ex-position" id="ex-position"></section>` : ""}
 
       <div class="detail-grid">
         <section class="panel">
@@ -701,6 +867,21 @@
       </div>`;
 
     mountSnapshot(root.querySelector("#snap-chart"), t);
+    if (t.broker) {
+      paintPosition(root, t);
+      const un = TD.paper.onChange(() => {
+        if (location.hash === "#/trades/" + t.id) {
+          const fresh = S.getTrade(t.id);
+          if (fresh && fresh.status !== t.status) renderDetail(root, params);
+          else paintPosition(root, fresh || t);
+        }
+      });
+      const prev = snapCleanup;
+      snapCleanup = () => {
+        un();
+        if (prev) prev();
+      };
+    }
 
     root.querySelector("#del").addEventListener("click", () => {
       if (confirm("Deze trade definitief verwijderen?")) {

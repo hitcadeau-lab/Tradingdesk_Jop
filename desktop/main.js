@@ -249,7 +249,7 @@ ipcMain.handle("td:open-releases", () => shell.openExternal((lastCheck && lastCh
 ipcMain.handle("td:check-update", () => checkForUpdate());
 ipcMain.handle("td:apply-update", () => applyUpdate());
 // Koersdata ophalen buiten de browserbeperkingen om (alleen voor deze hosts).
-const FETCH_HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
+const FETCH_HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com", "futures.kraken.com"];
 ipcMain.handle("td:fetch-json", async (_e, url) => {
   const u = new URL(url);
   if (u.protocol !== "https:" || !FETCH_HOSTS.includes(u.hostname)) throw new Error("Deze bron is niet toegestaan.");
