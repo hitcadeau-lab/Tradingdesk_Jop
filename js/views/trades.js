@@ -100,7 +100,7 @@
             ["rangeHigh", "rangeLow", "entry", "stopLoss", "tp1", "tp2"].filter((k) => query.get(k) !== null).map((k) => [k, +query.get(k)])
           ),
           entryDate: nowLocal(),
-          riskPct: S.getSettings().defaultRisk,
+          riskPct: query.get("riskPct") !== null ? +query.get("riskPct") : S.getSettings().defaultRisk,
           status: "open",
           checklist: {},
         };

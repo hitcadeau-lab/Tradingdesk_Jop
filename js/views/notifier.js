@@ -274,7 +274,20 @@
         tp1: +signal.tp1.toPrecision(10),
         tp2: +signal.tp2.toPrecision(10),
       });
-      actions.innerHTML = `<a class="btn primary" href="#/trades/new?${q}">Trade plaatsen</a>`;
+      actions.innerHTML = `<button class="btn primary" id="d-advise">Get advise</button><a class="btn" href="#/trades/new?${q}">Trade plaatsen</a>`;
+      actions.querySelector("#d-advise").addEventListener("click", async (e) => {
+        e.target.disabled = true;
+        e.target.textContent = "Advies maken…";
+        const base = sig || { symbol: sym, tf: frame, ...signal, range, id: null };
+        try {
+          const item = await TD.advise.fromSignal(base);
+          location.hash = "#/advise/" + encodeURIComponent(item.id);
+        } catch (err) {
+          e.target.disabled = false;
+          e.target.textContent = "Get advise";
+          alert("Advies maken mislukt: " + err.message);
+        }
+      });
     }
     actions.insertAdjacentHTML("beforeend", `<a class="btn" href="#/markt/${encodeURIComponent(sym)}">Open in Markt</a>`);
   }

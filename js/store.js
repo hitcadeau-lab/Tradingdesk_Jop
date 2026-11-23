@@ -440,6 +440,7 @@ window.TD = window.TD || {};
         trades: getTrades(),
         watchlist: getWatchlist(),
         notifier: load("td.notifier", null),
+        advice: load("td.advice", []),
       },
       null,
       2
@@ -453,6 +454,7 @@ window.TD = window.TD || {};
     if (d.settings) save(KEYS.settings, d.settings);
     if (Array.isArray(d.watchlist)) save(KEYS.watchlist, d.watchlist);
     if (d.notifier) save("td.notifier", d.notifier);
+    if (Array.isArray(d.advice)) save("td.advice", d.advice);
     return d.trades.length;
   }
 

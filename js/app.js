@@ -14,6 +14,7 @@
     const [section, a, b] = parts;
     const V = TD.views;
     if (section !== "notifier" && V.notifier) V.notifier.teardown();
+    if (section !== "advise" && V.advise) V.advise.teardown();
     document.querySelectorAll("[data-nav]").forEach((l) => l.classList.toggle("active", l.dataset.nav === (section || "markt")));
 
     switch (section) {
@@ -28,6 +29,8 @@
         return V.leerschool.render(root, {}, query);
       case "notifier":
         return V.notifier.render(root, { id: a }, query);
+      case "advise":
+        return V.advise.render(root, { id: a }, query);
       case "instellingen":
         return V.instellingen.render(root, {}, query);
       case "markt":

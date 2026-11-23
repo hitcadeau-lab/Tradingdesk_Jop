@@ -282,6 +282,60 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .view-toggle button.active { background: rgba(41, 98, 255, .2); color: #fff; }
 .range-summary { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px; }
 
+/* ---------- advise ---------- */
+.row.between { justify-content: space-between; }
+.badge.verdict.play { background: rgba(38, 166, 154, .18); color: var(--pos); border-color: rgba(38, 166, 154, .5); }
+.badge.verdict.doubt { background: rgba(245, 166, 35, .18); color: var(--warn); border-color: rgba(245, 166, 35, .5); }
+.badge.verdict.skip { background: rgba(239, 83, 80, .18); color: var(--neg); border-color: rgba(239, 83, 80, .5); }
+.advice-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.advice-card { display: grid; gap: 8px; padding: 14px 16px; background: var(--panel); border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 8px; color: var(--text); }
+.advice-card:hover { text-decoration: none; background: var(--panel-2); }
+.advice-card.play { border-left-color: var(--pos); }
+.advice-card.doubt { border-left-color: var(--warn); }
+.advice-card.skip { border-left-color: var(--neg); }
+.mini { display: grid; grid-template-columns: max-content 1fr; gap: 2px 12px; margin: 0; font-size: 13px; font-variant-numeric: tabular-nums; }
+.mini dt { color: var(--muted); }
+.mini dd { margin: 0; }
+.verdict-panel { display: grid; grid-template-columns: 1fr auto; gap: 8px 24px; align-items: center; border-left: 5px solid var(--border); }
+.verdict-panel.play { border-left-color: var(--pos); }
+.verdict-panel.doubt { border-left-color: var(--warn); }
+.verdict-panel.skip { border-left-color: var(--neg); }
+.verdict-label { font-size: 22px; font-weight: 700; }
+.verdict-panel.play .verdict-label { color: var(--pos); }
+.verdict-panel.doubt .verdict-label { color: var(--warn); }
+.verdict-panel.skip .verdict-label { color: var(--neg); }
+.verdict-main p { margin: 4px 0 0; }
+.verdict-score { display: flex; gap: 14px; flex-wrap: wrap; font-weight: 600; }
+.verdict-live { grid-column: 1 / -1; padding-top: 8px; border-top: 1px solid var(--border); font-size: 13px; }
+.principles { list-style: none; margin: 0 0 10px; padding: 0; display: grid; gap: 6px; }
+.principles li { display: flex; gap: 10px; padding: 9px 11px; border-radius: 6px; background: var(--panel-2); border-left: 4px solid var(--border); }
+.principles li.pass { border-left-color: var(--pos); }
+.principles li.warn { border-left-color: var(--warn); }
+.principles li.fail { border-left-color: var(--neg); }
+.principles li.info { border-left-color: var(--accent); }
+.principles .mark { width: 18px; font-weight: 800; text-align: center; }
+.principles li.pass .mark { color: var(--pos); }
+.principles li.warn .mark { color: var(--warn); }
+.principles li.fail .mark { color: var(--neg); }
+.principles li.info .mark { color: #82a8ff; }
+.p-label { font-weight: 600; }
+.p-text { color: var(--muted); font-size: 13px; }
+.calc-form { display: flex; gap: 12px; align-items: flex-end; flex-wrap: wrap; margin-bottom: 12px; }
+.calc-form input { width: 160px; }
+.calc-kpis { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.calc-kpis strong { font-size: 18px; }
+.scenarios, .ladder { width: 100%; height: auto; display: block; margin-top: 8px; }
+.sc-label { fill: var(--text); font-size: 13px; font-weight: 600; font-family: inherit; }
+.sc-note { fill: var(--muted); font-size: 10.5px; font-family: inherit; }
+.sc-val { font-size: 13px; font-weight: 700; font-family: inherit; fill: var(--text); }
+.sc-val.pos, .lad-pnl.pos { fill: var(--pos); }
+.sc-val.neg, .lad-pnl.neg { fill: var(--neg); }
+.lad-name { font-size: 12px; font-weight: 700; font-family: inherit; }
+.lad-price { fill: var(--muted); font-size: 11px; font-family: inherit; }
+.lad-pnl { font-size: 12px; font-weight: 700; font-family: inherit; fill: var(--text); }
+.lad-now { fill: var(--text); font-size: 11px; font-family: inherit; }
+@media (max-width: 640px) { .verdict-panel { grid-template-columns: 1fr; } }
+
 /* ---------- instellingen ---------- */
 .top-actions { display: flex; gap: 8px; align-items: center; }
 .settings-link { padding: 7px 10px; }
