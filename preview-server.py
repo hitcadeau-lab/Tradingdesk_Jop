@@ -53,7 +53,10 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Type", "application/json")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        try:
+            self.wfile.write(body)
+        except (BrokenPipeError, ConnectionResetError):
+            pass  # pagina ververst terwijl de koers onderweg was
 
 
 def fetch(target):

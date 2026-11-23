@@ -1,5 +1,7 @@
 // Koersdata (candles) voor de Notifier en de range-grafiek.
-//  - Crypto: Binance (openbare marktdata, geen key). Werkt in de browser en in de Mac-app.
+//  - Crypto: Kraken Futures (de perpetual waarop je handelt, bijv. PF_XBTUSD) in de Mac-app en
+//    de preview. Bestaat het pair niet op Kraken, of kan de omgeving Kraken niet lezen
+//    (gewone browser, oude app-schil), dan Binance (openbare marktdata, geen key).
 //  - Aandelen: Yahoo Finance. Alleen in de Mac-app (de browser blokkeert die bron).
 (function (TD) {
   const CRYPTO_EXCHANGES = ["BINANCE", "BYBIT", "COINBASE", "KRAKEN", "OKX", "BITGET", "MEXC", "KUCOIN", "GATEIO", "BITSTAMP", "CRYPTO"];
@@ -9,6 +11,8 @@
     "1h": { binance: "1h", yahoo: "60m", yahooRange: "60d", label: "1H", seconds: 3600 },
     "4h": { binance: "4h", yahoo: "60m", yahooRange: "200d", label: "4H", seconds: 14400, aggregate: 4 },
   };
+  const KRAKEN_RES = { "15m": "15m", "1h": "1h", "4h": "4h" };
+  let krakenDownUntil = 0; // na een fout 10 minuten niet opnieuw proberen
   const BINANCE_HOSTS = ["https://data-api.binance.vision", "https://api.binance.com"];
   const cache = new Map();
 
@@ -50,6 +54,38 @@
     );
   }
 
+  // Welk Kraken-contract hoort bij dit crypto-pair, als Kraken bruikbaar is? (anders null)
+  async function krakenSymbol(symbol) {
+    if (!TD.kraken || !TD.net || !TD.net.canProxy() || Date.now() < krakenDownUntil) return null;
+    const ks = TD.kraken.toSymbol(symbol);
+    if (!ks) return null;
+    try {
+      const list = await TD.kraken.instruments();
+      return list.has(ks) ? ks : null;
+    } catch {
+      krakenDownUntil = Date.now() + 600000;
+      return null;
+    }
+  }
+
+  async function kraken(ks, tf, limit) {
+    const conf = TF[tf];
+    const to = Math.floor(Date.now() / 1000);
+    const from = to - Math.ceil(limit * 1.05 + 2) * conf.seconds;
+    const d = await TD.net.json(`https://futures.kraken.com/api/charts/v1/trade/${ks}/${KRAKEN_RES[tf]}?from=${from}&to=${to}`);
+    const out = (d.candles || []).map((c) => ({ time: Math.floor(c.time / 1000), open: +c.open, high: +c.high, low: +c.low, close: +c.close, volume: +c.volume || 0 }));
+    if (!out.length) throw new Error(`Geen koersdata voor ${ks} bij Kraken.`);
+    return out.slice(-limit);
+  }
+
+  // Welke bron wordt nu echt gebruikt voor dit symbool? (voor labels in de app)
+  const lastFeed = new Map();
+  function feedLabel(symbol) {
+    const src = source(symbol);
+    if (!src) return "—";
+    return lastFeed.get(String(symbol).toUpperCase()) || src.label;
+  }
+
   async function yahoo(id, tf, limit) {
     if (!stocksAvailable())
       throw new Error(window.tdDesktop ? "Voor aandelen-data heb je de nieuwste app-versie nodig: installeer de nieuwste .dmg." : "Aandelen-data werkt alleen in de Mac-app.");
@@ -86,13 +122,28 @@
     if (!TF[tf]) throw new Error("Onbekend timeframe: " + tf);
     const src = source(symbol);
     if (!src) throw new Error("Onbekend ticker: " + symbol);
-    const key = `${src.type}:${src.id}:${tf}:${limit}`;
+    const key = `${String(symbol).toUpperCase()}:${tf}:${limit}`;
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < 60000) return hit.data;
-    const data = src.type === "binance" ? await binance(src.id, tf, limit) : await yahoo(src.id, tf, limit);
+    let data;
+    if (src.type === "binance") {
+      const ks = await krakenSymbol(symbol);
+      if (ks) {
+        try {
+          data = await kraken(ks, tf, limit);
+          lastFeed.set(String(symbol).toUpperCase(), `Kraken Futures (${ks})`);
+        } catch {
+          krakenDownUntil = Date.now() + 600000;
+        }
+      }
+      if (!data) {
+        data = await binance(src.id, tf, limit);
+        lastFeed.set(String(symbol).toUpperCase(), "Binance");
+      }
+    } else data = await yahoo(src.id, tf, limit);
     cache.set(key, { at: Date.now(), data });
     return data;
   }
 
-  TD.marketData = { source, candles, stocksAvailable, TF, aggregate };
+  TD.marketData = { source, candles, stocksAvailable, feedLabel, TF, aggregate };
 })(window.TD);

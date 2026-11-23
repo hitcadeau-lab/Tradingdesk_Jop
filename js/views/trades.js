@@ -4,9 +4,18 @@
   const { esc, money, pct, num, r, date, shortSym, signClass, nowLocal, compressImage } = TD.util;
   const S = TD.store;
 
+  // Fill-status van de papier-order: wacht op entry, gevuld, TP1 gevuld.
+  function fillBadge(t) {
+    const p = t.broker && TD.paper ? TD.paper.planForTrade(t.id) : null;
+    if (!p || t.status !== "open") return "";
+    if (p.status === "pending") return ` <span class="badge muted" title="De limit-order op ${esc(p.entry)} is nog niet geraakt">Wacht op fill</span>`;
+    if (p.status === "open") return ` <span class="badge pos" title="Gevuld op ${esc(p.avgEntry)}">${p.tp1Done ? "TP1 gevuld · stop BE" : "Gevuld"}</span>`;
+    return "";
+  }
+
   function statusBadge(t) {
     const paper = t.broker ? ` <span class="badge paper" title="Papier-order bij Kraken Futures">Papier</span>` : "";
-    if (t.status === "open") return `<span class="badge open">Open</span>${paper}`;
+    if (t.status === "open") return `<span class="badge open">Open</span>${paper}${fillBadge(t)}`;
     if (t.outcome === "Cancelled") return `<span class="badge muted">Cancelled</span>${paper}`;
     const cls = t.outcome === "Stop Loss" ? "neg" : "pos";
     return `<span class="badge ${cls}">${esc(t.outcome || "Gesloten")}</span>${paper}`;
@@ -16,6 +25,17 @@
     const sc = S.checklistScore(t);
     const cls = sc.passed === sc.total ? "pos" : sc.passed >= sc.total - 2 ? "warn" : "neg";
     return `<span class="badge ${cls}" title="Groene checks">${sc.passed}/${sc.total}</span>`;
+  }
+
+  // PnL-kolom: gesloten = journal-PnL, open papier-positie = live open PnL (cursief).
+  function pnlCell(t) {
+    if (t.status === "closed") return `<td class="num ${signClass(+t.pnl)}">${money(+t.pnl)}</td>`;
+    const p = t.broker && TD.paper ? TD.paper.planForTrade(t.id) : null;
+    if (p && p.status === "open") {
+      const u = TD.paper.unrealized(p, p.lastPrice) + p.realized - p.fees;
+      return `<td class="num ${signClass(u)}" title="Open PnL (live, inclusief gerealiseerd en fees)"><em>${money(u)}</em></td>`;
+    }
+    return `<td class="num">—</td>`;
   }
 
   // ---------------- Overzicht ----------------
@@ -65,13 +85,23 @@
                   <td>${esc(t.setup)}</td><td>${esc(t.tradeType)}</td><td>${scoreBadge(t)}</td>
                   <td>${statusBadge(t)}</td><td class="num">${r(S.totalRR(t))}</td>
                   <td class="num">${row ? r(row.r) : "—"}</td>
-                  <td class="num ${signClass(+t.pnl)}">${t.status === "closed" ? money(+t.pnl) : "—"}</td></tr>`;
+                  ${pnlCell(t)}</tr>`;
               })
               .join("")}
             </tbody></table>`
           : `<div class="empty">Nog geen trades${f.status || f.ticker || f.setup ? " met deze filters" : ""}. <a href="#/trades/new">Plaats je eerste trade</a>.</div>`
       }
       </div>`;
+
+    // Live bijwerken zolang het overzicht open staat (fills, open PnL, sluitingen).
+    if (TD.paper && all.some((t) => t.broker && t.status === "open")) {
+      const here = location.hash;
+      const un = TD.paper.onChange(() => {
+        if (location.hash === here) renderList(root, params, query);
+      });
+      if (snapCleanup) snapCleanup();
+      snapCleanup = un;
+    }
 
     root.querySelectorAll("[data-filter]").forEach((s) =>
       s.addEventListener("change", () => {
@@ -298,6 +328,32 @@
     };
   }
 
+  // Status-blok in het formulier voor een trade die via Kraken (papier) loopt.
+  function brokerStatusHTML(t, p, live) {
+    const opt = (list, val) => list.map((o) => `<option ${o === val ? "selected" : ""}>${esc(o)}</option>`).join("");
+    const head = `<h2>Status & resultaat <span class="badge paper">Papier</span> <span class="muted small">${esc(p.symbol)}</span></h2>`;
+    if (live)
+      return `<section class="panel ex-section" id="broker-status">${head}
+        <p>${p.status === "pending" ? "Je limit-order op " + esc(p.entry) + " bij <strong>Kraken Futures</strong> wacht nog op een fill." : "Je positie bij <strong>Kraken Futures</strong> staat open, met je stop loss en TP's al geplaatst."}
+        Wil je er eerder uit? ${p.status === "pending" ? "Annuleer de order" : "Klik op <strong>Positie sluiten</strong>: Tradingdesk sluit de positie tegen de marktprijs en haalt de openstaande stop en TP's weg"}.
+        De uitkomst, de exit-tijd en de echte PnL (inclusief fees) vult de app daarna zelf in; ‘Plan gevolgd?’ en je les vul je hier daarna in.</p>
+        <div class="row gap">
+          ${p.status === "pending" ? `<button type="button" class="btn" data-broker="cancel">Order annuleren</button>` : ""}
+          ${p.status === "open" ? `<button type="button" class="btn danger" data-broker="close">Positie sluiten (markt)</button>` : ""}
+          <a class="btn" href="#/trades/${esc(t.id)}">Bekijk positie</a>
+          <span class="muted small" id="broker-msg"></span>
+        </div>
+      </section>`;
+    return `<section class="panel ex-section">${head}
+      <dl class="dl"><dt>Uitkomst</dt><dd>${esc(t.outcome || "—")}</dd><dt>Exit</dt><dd>${esc(TD.util.stamp(t.exitDate) || "—")}</dd>
+      <dt>PnL</dt><dd class="${signClass(+t.pnl)}">${money(+t.pnl)} <span class="muted small">via Kraken, inclusief fees</span></dd></dl>
+      <div class="grid g4">
+        <label>Plan gevolgd?<select name="followedPlan"><option value="">— kies —</option>${opt(S.OPTIONS.followedPlan, t.followedPlan)}</select></label>
+        <label class="span4">Les / key takeaway<textarea name="lesson" rows="3">${esc(t.lesson || "")}</textarea></label>
+      </div>
+    </section>`;
+  }
+
   // ---------------- Formulier ----------------
   function renderForm(root, params, query) {
     const editing = params.id ? S.getTrade(params.id) : null;
@@ -322,7 +378,10 @@
           checklist: {},
         };
     if (!t.checklist) t.checklist = {};
-    const focusClose = query.get("close") === "1";
+    // Loopt de trade via Kraken (papier)? Dan sluit je hem via de exchange, niet met de hand.
+    const brokerPlan = editing && editing.broker && TD.paper ? TD.paper.planForTrade(editing.id) : null;
+    const brokerLive = !!(brokerPlan && ["pending", "open"].includes(brokerPlan.status));
+    const focusClose = query.get("close") === "1" && !brokerPlan;
     if (focusClose && t.status === "open") {
       t.status = "closed";
       // Vooraf ingevuld vanuit de geraakte levels (melding of detailpagina).
@@ -424,7 +483,7 @@
           </div>
         </section>
 
-        <section class="panel">
+        ${brokerPlan ? brokerStatusHTML(t, brokerPlan, brokerLive) : `<section class="panel">
           <h2>Status & resultaat</h2>
           <div class="grid g4">
             <label>Status
@@ -445,7 +504,7 @@
             <label>Plan gevolgd?<select name="followedPlan"><option value="">— kies —</option>${opt(S.OPTIONS.followedPlan, t.followedPlan)}</select></label>
             <label class="span4">Les / key takeaway<textarea name="lesson" rows="3">${esc(t.lesson || "")}</textarea></label>
           </div>
-        </section>
+        </section>`}
 
         ${
           !editing
@@ -559,8 +618,8 @@
       root.querySelector("#levels-viz").innerHTML = TD.levelsViz.html({ ...o, riskAmount: risk, currency: S.getSettings().currency });
       if (live) live.update(o);
       const sug = S.suggestedPnl(o, risk);
-      root.querySelector("#pnl-suggest").textContent =
-        o.status === "closed" && sug !== null ? `Voorstel: ${money(sug)} (50% op TP1, rest op BE/TP2)` : "";
+      const sugEl = root.querySelector("#pnl-suggest");
+      if (sugEl) sugEl.textContent = o.status === "closed" && sug !== null ? `Voorstel: ${money(sug)} (50% op TP1, rest op BE/TP2)` : "";
       return sug;
     }
 
@@ -635,7 +694,26 @@
       form.tp2.value = o.direction === "Long" ? o.rangeHigh : o.rangeLow;
       paintCalc();
     });
-    root.querySelector("#use-suggest").addEventListener("click", () => {
+    // Trade via Kraken: sluiten of annuleren vanuit het formulier.
+    root.querySelectorAll("[data-broker]").forEach((b) =>
+      b.addEventListener("click", async () => {
+        const msg = root.querySelector("#broker-msg");
+        const what = b.dataset.broker;
+        if (!confirm(what === "close" ? "Papier-positie nu tegen de marktprijs sluiten bij Kraken?\n\nWijzigingen in dit formulier die je nog niet hebt opgeslagen, gaan verloren." : "Papier-order annuleren?")) return;
+        b.disabled = true;
+        msg.textContent = what === "close" ? "Sluiten bij Kraken…" : "";
+        try {
+          if (what === "close") await TD.paper.closeMarket(brokerPlan.id);
+          else TD.paper.cancel(brokerPlan.id);
+          location.hash = "#/trades/" + editing.id;
+        } catch (err) {
+          b.disabled = false;
+          msg.textContent = err.message;
+        }
+      })
+    );
+    const useSug = root.querySelector("#use-suggest");
+    if (useSug) useSug.addEventListener("click", () => {
       const sug = paintCalc();
       if (sug === null) {
         alert("Kies eerst een uitkomst en vul entry, stoploss en TP's in.");
@@ -649,6 +727,11 @@
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const o = readTrade();
+      if (editing && editing.broker) {
+        const fresh = S.getTrade(editing.id) || editing;
+        for (const k of ["status", "outcome", "exitDate", "pnl"]) o[k] = fresh[k];
+        if (o.status !== "closed") o.followedPlan = "";
+      }
       const passed = paintChecklist();
       if (passed < S.CHECKLIST.length && !editing) {
         if (!confirm(`Niet alle checks zijn groen (${passed}/${S.CHECKLIST.length}).\nWeet je zeker dat je deze trade wilt plaatsen?`)) return;
@@ -769,7 +852,7 @@
           <div class="muted">${esc(t.setup)} · ${esc(t.tradeType)} · <a href="#/markt/${encodeURIComponent(t.ticker)}">${esc(t.ticker)} in Markt</a></div>
         </div>
         <div class="row gap">
-          ${t.status === "open" ? `<a class="btn primary" href="${TD.tradeAlerts ? TD.tradeAlerts.closeLink(t) : `#/trades/${t.id}/edit?close=1`}">Trade sluiten</a>` : ""}
+          ${t.status === "open" && !t.broker ? `<a class="btn primary" href="${TD.tradeAlerts ? TD.tradeAlerts.closeLink(t) : `#/trades/${t.id}/edit?close=1`}">Trade sluiten</a>` : ""}
           <a class="btn" href="#/trades/${t.id}/edit">Bewerken</a>
           <button class="btn danger" id="del">Verwijderen</button>
         </div>
