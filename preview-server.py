@@ -7,6 +7,8 @@ Alleen GET-verzoeken naar de toegestane adressen hieronder worden doorgegeven.
 Gebruik: python3 preview-server.py [poort]
 """
 import http.server
+import shutil
+import subprocess
 import socketserver
 import sys
 import urllib.error
@@ -42,13 +44,8 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         if parsed.scheme != "https" or parsed.hostname not in ALLOWED_HOSTS:
             self.send_error(403, "Bron niet toegestaan")
             return
-        req = urllib.request.Request(target, headers={"User-Agent": "Mozilla/5.0 Tradingdesk-Preview", "Accept": "application/json"})
         try:
-            with urllib.request.urlopen(req, timeout=20) as resp:
-                body = resp.read()
-                status = resp.status
-        except urllib.error.HTTPError as e:
-            body, status = e.read(), e.code
+            body, status = fetch(target)
         except Exception as e:  # netwerkfout
             self.send_error(502, str(e))
             return
@@ -57,6 +54,26 @@ class Handler(http.server.SimpleHTTPRequestHandler):
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
         self.wfile.write(body)
+
+
+def fetch(target):
+    """Haal de bron op. Valt terug op curl als Python geen certificaten heeft
+    (komt voor bij Python van python.org op de Mac)."""
+    req = urllib.request.Request(target, headers={"User-Agent": "Mozilla/5.0 Tradingdesk-Preview", "Accept": "application/json"})
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            return resp.read(), resp.status
+    except urllib.error.HTTPError as e:
+        return e.read(), e.code
+    except Exception:
+        if not shutil.which("curl"):
+            raise
+        out = subprocess.run(
+            ["curl", "-sS", "-m", "20", "-A", "Mozilla/5.0 Tradingdesk-Preview", "-w", "\n%{http_code}", target],
+            capture_output=True, check=True,
+        ).stdout
+        body, _, code = out.rpartition(b"\n")
+        return body, int(code or 502)
 
 
 class Server(socketserver.ThreadingMixIn, http.server.HTTPServer):

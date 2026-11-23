@@ -15,6 +15,9 @@ window.TD = window.TD || {};
       }
     }
     const res = isPreview() ? await fetch("/proxy?url=" + encodeURIComponent(url)) : await fetch(url);
+    // Oude preview zonder doorgeefserver: /proxy bestaat dan niet.
+    if (isPreview() && (res.status === 404 || res.status === 501) && !(res.headers.get("content-type") || "").includes("json"))
+      throw new Error("De preview-server is verouderd. Stop de preview (Ctrl+C) en start hem opnieuw met ./preview.sh.");
     if (!res.ok) throw new Error(`Koersdata niet beschikbaar (${res.status}).`);
     return res.json();
   }
