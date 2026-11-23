@@ -85,3 +85,26 @@ test("map inspecteren en iCloud herkennen", () => {
   assert.equal(isICloud("/Users/jop/Library/Mobile Documents/com~apple~CloudDocs/Trading", "/Users/jop"), true);
   assert.equal(isICloud("/Users/jop/Documents/Trading", "/Users/jop"), false);
 });
+
+// Kraken Futures: handtekening gelijk aan de Python-voorbeeldcode uit de Kraken-documentatie.
+const krakenAuth = require("../lib/kraken-auth");
+test("Kraken-handtekening volgens de documentatie", () => {
+  const secret = Buffer.from([...Array(64).keys()]).toString("base64");
+  assert.strictEqual(
+    krakenAuth.sign("/derivatives/api/v3/accounts", "", "1700000000000", secret),
+    "JTYYxznkCAFxb32G4rngnIEw5+qLj22qQ5OP7STP8jSIrbuRtriSbK+76RN+NQKlUMsL7Y59gc7eZclMTGfZiw=="
+  );
+  assert.strictEqual(
+    krakenAuth.sign("/derivatives/api/v3/fills", "lastFillTime=2024-01-01T00:00:00.000Z", "1700000000001", secret),
+    "emCyGW3HRuE8xmNQMupN4g+Mje5CFaFm+RWalgzAfJ2hZ3kK/mS9lDJCtDexHr9X/iRJLu0CabjtqYKDA/0Ogg=="
+  );
+});
+test("Kraken: alleen lees-verzoeken, nonce stijgt, keys gecontroleerd", () => {
+  for (const p of Object.values(krakenAuth.READ_ENDPOINTS)) assert.ok(!/sendorder|editorder|cancel|withdraw|transfer/i.test(p));
+  const a = +krakenAuth.nextNonce(), b = +krakenAuth.nextNonce();
+  assert.ok(b > a);
+  assert.throws(() => krakenAuth.checkCreds("kort", "x"));
+  const ok = krakenAuth.checkCreds("  " + "k".repeat(56) + " ", Buffer.alloc(64, 7).toString("base64"));
+  assert.strictEqual(ok.key.length, 56);
+  assert.strictEqual(krakenAuth.hint("abcdefghijkl"), "abcd…ijkl");
+});

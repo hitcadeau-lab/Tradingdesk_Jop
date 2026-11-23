@@ -4,6 +4,38 @@
   const { esc, money, pct, num, r, date, shortSym, signClass, download } = TD.util;
   const S = TD.store;
 
+  // Echt Kraken-saldo naast je journal (alleen als je account gekoppeld is, in de Mac-app).
+  async function paintKraken(root, p) {
+    const KA = TD.krakenAccount;
+    const box = root.querySelector("#kr-portfolio");
+    if (!box || !KA || !KA.available()) return;
+    try {
+      const st = await KA.status();
+      if (!st.connected) return;
+      const d = await KA.summary();
+      if (!d.hasFlex || !root.contains(box)) return;
+      const usd = (v) => (+v || 0).toLocaleString("nl-NL", { style: "currency", currency: "USD" });
+      const diff = d.balance - p.balance;
+      const target = KA.alignedStart(d.balance);
+      box.innerHTML = `<section class="panel kr-strip">
+        <div class="kpis small">
+          <div class="kpi"><span>Saldo Kraken (echt)</span><strong>${usd(d.balance)}</strong><em>equity ${usd(d.equity)} · bijgewerkt ${esc(TD.util.stamp(d.at))}</em></div>
+          <div class="kpi"><span>Verschil met journal</span><strong class="${Math.abs(diff) < 0.01 ? "" : signClass(diff)}">${Math.abs(diff) < 0.01 ? "gelijk" : usd(diff)}</strong><em>journal ${money(p.balance)}</em></div>
+        </div>
+        ${Math.abs(diff) >= 0.01 ? `<button class="btn small" id="kr-pf-align">Startkapitaal op ${usd(target)} zetten (journal = Kraken)</button> <span class="muted small">Verschil door fees, funding, een storting of papier-trades in je journal.</span>` : ""}
+      </section>`;
+      const b = box.querySelector("#kr-pf-align");
+      if (b)
+        b.addEventListener("click", () => {
+          if (!confirm(`Startkapitaal op ${usd(target)} zetten? Je journal-saldo wordt dan gelijk aan je Kraken-saldo.`)) return;
+          S.setSettings({ startingCapital: target, currency: "$" });
+          render(root);
+        });
+    } catch (e) {
+      box.innerHTML = `<p class="muted small">Kraken-saldo niet beschikbaar: ${esc(e.message)}</p>`;
+    }
+  }
+
   function render(root) {
     const p = S.computePortfolio();
     const trades = S.getTrades();
@@ -40,6 +72,7 @@
         ${kpi("Plan adherence", pct(p.planAdherence), "", "“Followed plan?” = Yes")}
         ${kpi("Open risico", money(p.openRisk), "", "som van risico open trades")}
       </div>
+      <div id="kr-portfolio"></div>
 
       <section class="panel">
         <h2>Equity curve <span class="muted small">— klik op een punt om de trade te openen</span></h2>
@@ -110,6 +143,8 @@
       </section>
 
       ${projection(p)}`;
+
+    paintKraken(root, p);
 
     root.querySelector("#exp-csv").addEventListener("click", () =>
       download(`tradingdesk-journal-${new Date().toISOString().slice(0, 10)}.csv`, "﻿" + S.exportCSV(), "text/csv")

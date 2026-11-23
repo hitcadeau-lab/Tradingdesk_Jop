@@ -43,8 +43,126 @@
         </div>`
           : ""
       }
-      <p class="muted small">Stap 2 en 3 (je echte Kraken-account koppelen) komen later. Er wordt nu nooit een echte order geplaatst.</p>
+      <h3>Je Kraken-account <span class="badge muted">alleen lezen</span></h3>
+      <div id="kr-box">${krakenIntro()}</div>
+      <p class="muted small">Tradingdesk plaatst nooit een echte order: papier-orders blijven papier, en een gekoppeld account wordt alleen gelezen.</p>
     </section>`;
+  }
+
+  // ---------- Kraken-account (stap 2: alleen lezen) ----------
+  const usd = (v) => (+v || 0).toLocaleString("nl-NL", { style: "currency", currency: "USD" });
+  function krakenIntro() {
+    const KA = TD.krakenAccount;
+    if (!KA) return "";
+    if (!KA.available())
+      return `<p class="muted small">Koppel je echte Kraken Futures-account om je saldo te zien en je startkapitaal daaruit te halen. Dit kan alleen in de <strong>Mac-app</strong>${S.desktop ? ": installeer daarvoor de nieuwste <code>.dmg</code>" : ""}, omdat je API-key daar veilig in de macOS-sleutelhanger wordt bewaard.</p>`;
+    return `<p class="muted small">Laden…</p>`;
+  }
+  function connectFormHTML() {
+    return `<p class="small">Koppel je Kraken Futures-account met een API-key die <strong>alleen mag lezen</strong>. Je ziet dan je echte saldo, en je startkapitaal wordt daaruit berekend.</p>
+      <ol class="small steps">
+        <li>Log in bij <strong>Kraken Pro</strong> en ga naar <strong>Settings → API</strong>, tabblad <strong>Futures</strong>, en klik op <strong>Create key</strong>.</li>
+        <li>Kies bij <strong>General API: Read Only</strong> en bij <strong>Withdrawal API: No Access</strong>. Nooit "Full Access".</li>
+        <li>Kopieer de <strong>public key</strong> en de <strong>private key</strong> hieronder. De private key zie je bij Kraken maar één keer.</li>
+      </ol>
+      <div class="grid g4">
+        <label class="span2">Public key<input type="text" id="kr-key" autocomplete="off" spellcheck="false"></label>
+        <label class="span2">Private key<input type="password" id="kr-secret" autocomplete="off" spellcheck="false"></label>
+      </div>
+      <div class="row gap" style="margin-top:10px">
+        <button class="btn small primary" id="kr-connect">Koppelen</button>
+        <span class="muted small" id="kr-out"></span>
+      </div>
+      <p class="muted small">De key wordt eerst bij Kraken gecontroleerd en daarna versleuteld opgeslagen op deze Mac (macOS-sleutelhanger). Hij komt niet in iCloud, niet in je back-ups en niet op GitHub. Tradingdesk gebruikt hem alleen om te lezen: saldo, posities, orders en fills.</p>`;
+  }
+  function connectedHTML(st, d, err) {
+    const sc = S.getSettings();
+    const target = d ? TD.krakenAccount.alignedStart(d.balance) : null;
+    const p = S.computePortfolio();
+    const diff = d ? d.balance - p.balance : 0;
+    return `<p class="small"><span class="badge pos">Gekoppeld</span> key ${esc(st.hint)}${st.since ? ` · sinds ${esc(TD.util.stamp(st.since))}` : ""}</p>
+      ${err ? `<p class="warn-text small">${esc(err)}</p>` : ""}
+      ${
+        d && !d.hasFlex
+          ? `<p class="warn-text small">Geen Futures-wallet (multi-collateral) gevonden. Zet eerst geld over naar je Kraken Futures-wallet.</p>`
+          : d
+          ? `<div class="kpis small">
+          <div class="kpi"><span>Saldo Kraken</span><strong>${usd(d.balance)}</strong><em>zonder open PnL</em></div>
+          <div class="kpi"><span>Equity</span><strong class="${d.unrealized >= 0 ? "pos" : "neg"}">${usd(d.equity)}</strong><em>incl. ${usd(d.unrealized)} open</em></div>
+          <div class="kpi"><span>Vrije marge</span><strong>${usd(d.available)}</strong><em>${usd(d.initialMargin)} in gebruik</em></div>
+          <div class="kpi"><span>Open posities</span><strong>${d.positions.length}</strong><em>bijgewerkt ${esc(TD.util.stamp(d.at))}</em></div>
+        </div>
+        ${
+          Math.abs(diff) >= 0.01
+            ? `<div class="ex-align">
+          <p class="small">Je journal-saldo is ${esc(TD.util.money(p.balance))}, je Kraken-saldo ${usd(d.balance)} (verschil ${usd(diff)}). Met een startkapitaal van <strong>${usd(target)}</strong> zijn ze gelijk${p.taken ? " (startkapitaal = Kraken-saldo min de PnL van je gesloten trades)" : ""}.</p>
+          <button class="btn small" id="kr-align">Startkapitaal op ${usd(target)} zetten</button>
+        </div>`
+            : `<p class="muted small">Je journal-saldo is gelijk aan je Kraken-saldo.</p>`
+        }`
+          : ""
+      }
+      <div class="row gap" style="margin-top:10px">
+        <button class="btn small" id="kr-refresh">Vernieuwen</button>
+        <button class="btn small danger" id="kr-disconnect">Ontkoppelen</button>
+        <span class="muted small" id="kr-out"></span>
+      </div>`;
+  }
+  async function paintKraken(root, force) {
+    const box = root.querySelector("#kr-box");
+    const KA = TD.krakenAccount;
+    if (!box || !KA || !KA.available()) return;
+    let st;
+    try {
+      st = await KA.status();
+    } catch (e) {
+      box.innerHTML = `<p class="warn-text small">${esc(e.message)}</p>`;
+      return;
+    }
+    if (!st.connected) {
+      box.innerHTML = connectFormHTML();
+      const btn = box.querySelector("#kr-connect");
+      btn.addEventListener("click", async () => {
+        const out = box.querySelector("#kr-out");
+        btn.disabled = true;
+        out.textContent = "Controleren bij Kraken…";
+        try {
+          await KA.connect(box.querySelector("#kr-key").value, box.querySelector("#kr-secret").value);
+          box.querySelector("#kr-secret").value = "";
+          const d = await KA.summary(true);
+          const target = KA.alignedStart(d.balance);
+          if (d.hasFlex && confirm(`Gekoppeld. Je Kraken-saldo is ${usd(d.balance)}.\n\nStartkapitaal van je journal op ${usd(target)} zetten, zodat je journal-saldo gelijk is aan Kraken?`))
+            S.setSettings({ startingCapital: target, currency: "$" });
+          render(root);
+        } catch (e) {
+          btn.disabled = false;
+          out.textContent = e.message;
+        }
+      });
+      return;
+    }
+    let d = KA.cached(), err = "";
+    if (!d || force) {
+      box.innerHTML = connectedHTML(st, d, "") ;
+      try {
+        d = await KA.summary(force);
+      } catch (e) {
+        err = e.message;
+      }
+    }
+    box.innerHTML = connectedHTML(st, d, err);
+    const align = box.querySelector("#kr-align");
+    if (align)
+      align.addEventListener("click", () => {
+        S.setSettings({ startingCapital: KA.alignedStart(d.balance), currency: "$" });
+        render(root);
+      });
+    box.querySelector("#kr-refresh").addEventListener("click", () => paintKraken(root, true));
+    box.querySelector("#kr-disconnect").addEventListener("click", async () => {
+      if (!confirm("Kraken-account ontkoppelen? De API-key wordt van deze Mac verwijderd. Je journal blijft staan.")) return;
+      await KA.disconnect();
+      render(root);
+    });
   }
 
   function bindExchange(root) {
@@ -162,6 +280,7 @@
       </section>`;
 
     bindExchange(root);
+    paintKraken(root);
 
     // ---- trading ----
     const savedNote = root.querySelector("#trading-saved");

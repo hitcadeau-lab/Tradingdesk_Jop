@@ -18,5 +18,11 @@ contextBridge.exposeInMainWorld("tdDesktop", {
   revealBackups: () => ipcRenderer.invoke("td:reveal-backups"),
   // Sinds app-schil 3: koersdata (aandelen, Yahoo Finance) voor de Notifier.
   fetchJSON: (url) => ipcRenderer.invoke("td:fetch-json", url),
+  // Sinds app-schil 5: Kraken Futures-account koppelen (alleen lezen). De key gaat naar de
+  // app-schil en komt nooit meer terug naar de webapp.
+  krakenStatus: () => ipcRenderer.invoke("td:kraken-status"),
+  krakenConnect: (key, secret) => ipcRenderer.invoke("td:kraken-connect", { key, secret }),
+  krakenDisconnect: () => ipcRenderer.invoke("td:kraken-disconnect"),
+  krakenRead: (name) => ipcRenderer.invoke("td:kraken-read", name),
   onUpdateAvailable: (cb) => ipcRenderer.on("td:update-available", (_e, data) => cb(data)),
 });

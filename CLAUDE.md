@@ -25,3 +25,4 @@ De methode volgt *Range Trading 101* en *Technical Analysis 101*. Communiceer me
 
 - Mac-app: `iCloud Drive/Tradingdesk/tradingdesk-data.json` (of de map die in Instellingen is gekozen), met dagelijkse back-ups. In de browser en de preview: localStorage.
 - Trades van de gebruiker komen nooit in de repository.
+- Kraken API-keys: alleen via het formulier in de Mac-app, versleuteld met Electron safeStorage (macOS-sleutelhanger) in de app-map, nooit in de webapp, iCloud-data, back-ups, de chat of de repository. Alleen lees-endpoints (`desktop/lib/kraken-auth.js`); nooit keys met opnamerechten.

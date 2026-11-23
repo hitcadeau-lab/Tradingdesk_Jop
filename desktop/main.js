@@ -2,13 +2,14 @@
 // - Laadt de webapp (ingebouwd of een nieuwere gedownloade versie).
 // - Bewaart alle data in iCloud Drive/Tradingdesk/tradingdesk-data.json (met dagelijkse back-ups).
 // - Controleert GitHub Releases op updates en installeert nieuwe app-inhoud met één klik.
-const { app, BrowserWindow, ipcMain, shell, dialog, net } = require("electron");
+const { app, BrowserWindow, ipcMain, shell, dialog, net, safeStorage } = require("electron");
 const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
 const { defaultDataDir, createStorage, inspectDir, isICloud } = require("./lib/storage");
 const { pickWebDir, evaluate } = require("./lib/updates");
+const krakenAuth = require("./lib/kraken-auth");
 const pkg = require("./package.json");
 
 const REPO = pkg.tradingdesk.repo;
@@ -257,6 +258,52 @@ ipcMain.handle("td:fetch-json", async (_e, url) => {
   if (!res.ok) throw new Error(`Koersdata niet beschikbaar (${res.status}).`);
   return res.json();
 });
+// ---------- Kraken Futures-account (alleen lezen) ----------
+// De API-key staat versleuteld in de app-map; de sleutel daarvoor bewaart macOS in de
+// sleutelhanger (Electron safeStorage). Niet in iCloud, niet in je data, niet in de webapp.
+function krakenKeyFile() {
+  return path.join(app.getPath("userData"), "kraken-key.bin");
+}
+function readKrakenKey() {
+  try {
+    return JSON.parse(safeStorage.decryptString(fs.readFileSync(krakenKeyFile())));
+  } catch {
+    return null;
+  }
+}
+async function krakenGet(name, creds) {
+  const p = krakenAuth.READ_ENDPOINTS[name];
+  if (!p) throw new Error("Dit Kraken-verzoek is niet toegestaan.");
+  const res = await net.fetch(krakenAuth.BASE + p, {
+    headers: { ...krakenAuth.authHeaders(p, "", creds), Accept: "application/json", "User-Agent": "Tradingdesk-App" },
+  });
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !data || data.result !== "success") throw new Error(krakenAuth.errorText(data && data.error, res.status));
+  return data;
+}
+ipcMain.handle("td:kraken-status", () => {
+  const k = readKrakenKey();
+  return { connected: !!k, hint: k ? krakenAuth.hint(k.key) : "", since: k ? k.since : null, secure: safeStorage.isEncryptionAvailable() };
+});
+ipcMain.handle("td:kraken-connect", async (_e, { key, secret }) => {
+  const creds = krakenAuth.checkCreds(key, secret);
+  await krakenGet("accounts", creds); // eerst controleren of de key werkt
+  if (!safeStorage.isEncryptionAvailable()) throw new Error("De macOS-sleutelhanger is niet beschikbaar; de key wordt niet opgeslagen.");
+  const blob = safeStorage.encryptString(JSON.stringify({ ...creds, since: new Date().toISOString() }));
+  fs.writeFileSync(krakenKeyFile(), blob, { mode: 0o600 });
+  return { connected: true, hint: krakenAuth.hint(creds.key) };
+});
+ipcMain.handle("td:kraken-disconnect", () => {
+  fs.rmSync(krakenKeyFile(), { force: true });
+  return { connected: false };
+});
+ipcMain.handle("td:kraken-read", async (_e, name) => {
+  if (!krakenAuth.READ_ENDPOINTS[name]) throw new Error("Dit Kraken-verzoek is niet toegestaan.");
+  const k = readKrakenKey();
+  if (!k) throw new Error("Er is geen Kraken-account gekoppeld.");
+  return krakenGet(name, k);
+});
+
 ipcMain.handle("td:choose-dir", async () => {
   const r = await dialog.showOpenDialog(win, {
     title: "Kies een map voor je Tradingdesk-data",
