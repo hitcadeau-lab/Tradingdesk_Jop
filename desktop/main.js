@@ -7,7 +7,7 @@ const fs = require("fs");
 const os = require("os");
 const path = require("path");
 const { execFileSync } = require("child_process");
-const { defaultDataDir, createStorage } = require("./lib/storage");
+const { defaultDataDir, createStorage, inspectDir, isICloud } = require("./lib/storage");
 const { pickWebDir, evaluate } = require("./lib/updates");
 const pkg = require("./package.json");
 
@@ -43,17 +43,36 @@ function info() {
     shellVersion: SHELL_VERSION,
     appVersion: pkg.version,
     dataFile: storage.file,
+    dataDir: storage.dir,
     backupDir: storage.backupDir,
     icloud: storage.icloud,
+    customDir: !!readConfig().dataDir,
+    defaultDir: defaultDataDir(home()).dir,
     releasesUrl: RELEASES_URL,
   };
 }
 
+// ---------- instellingen van de app-schil (userData/config.json) ----------
+const home = () => process.env.TD_HOME || os.homedir();
+const configFile = () => path.join(app.getPath("userData"), "config.json");
+function readConfig() {
+  try {
+    return JSON.parse(fs.readFileSync(configFile(), "utf8")) || {};
+  } catch {
+    return {};
+  }
+}
+function writeConfig(patch) {
+  fs.mkdirSync(path.dirname(configFile()), { recursive: true });
+  fs.writeFileSync(configFile(), JSON.stringify({ ...readConfig(), ...patch }, null, 2));
+}
+
 // ---------- opslag ----------
 function initStorage() {
-  const { dir, icloud } = defaultDataDir(process.env.TD_HOME || undefined);
+  const custom = readConfig().dataDir;
+  const dir = custom && fs.existsSync(custom) ? custom : defaultDataDir(home()).dir;
   storage = createStorage(dir);
-  storage.icloud = icloud;
+  storage.icloud = isICloud(dir, home());
   try {
     storage.dailyBackup();
     cache = storage.read();
@@ -62,6 +81,29 @@ function initStorage() {
     cache = {};
     storage.readOnly = true; // niets overschrijven tot het probleem is opgelost
   }
+}
+
+// Opslagmap wisselen. mode "move": huidige data meenemen naar de nieuwe map.
+// mode "use": de data gebruiken die al in de nieuwe map staat. dir null = terug naar standaard.
+function setDataDir(dir, mode) {
+  const target = dir || defaultDataDir(home()).dir;
+  if (path.resolve(target) === path.resolve(storage.dir)) return { changed: false };
+  fs.mkdirSync(target, { recursive: true });
+  const next = createStorage(target);
+  const found = inspectDir(target);
+  if (mode === "move") {
+    if (found.hasData) throw new Error("In die map staat al Tradingdesk-data. Kies ‘Gebruik de data in die map’ of kies een lege map.");
+    next.write(cache);
+  } else {
+    if (!found.hasData) throw new Error("In die map staat nog geen Tradingdesk-data.");
+    cache = next.read();
+  }
+  writeConfig({ dataDir: dir || null });
+  storage = next;
+  storage.icloud = isICloud(target, home());
+  storage.readOnly = false;
+  storage.dailyBackup();
+  return { changed: true, info: info() };
 }
 
 function persist(store) {
@@ -200,6 +242,20 @@ ipcMain.handle("td:reveal", () => shell.showItemInFolder(storage.file));
 ipcMain.handle("td:open-releases", () => shell.openExternal((lastCheck && lastCheck.releaseUrl) || RELEASES_URL));
 ipcMain.handle("td:check-update", () => checkForUpdate());
 ipcMain.handle("td:apply-update", () => applyUpdate());
+ipcMain.handle("td:choose-dir", async () => {
+  const r = await dialog.showOpenDialog(win, {
+    title: "Kies een map voor je Tradingdesk-data",
+    defaultPath: storage.dir,
+    properties: ["openDirectory", "createDirectory"],
+  });
+  if (r.canceled || !r.filePaths[0]) return null;
+  return { dir: r.filePaths[0], ...inspectDir(r.filePaths[0]), icloud: isICloud(r.filePaths[0], home()) };
+});
+ipcMain.handle("td:set-data-dir", (_e, { dir, mode }) => setDataDir(dir, mode));
+ipcMain.handle("td:reveal-backups", () => {
+  fs.mkdirSync(storage.backupDir, { recursive: true });
+  return shell.openPath(storage.backupDir);
+});
 ipcMain.handle("td:save-file", async (_e, { name, content }) => {
   const r = await dialog.showSaveDialog(win, { defaultPath: path.join(app.getPath("downloads"), name) });
   if (r.canceled || !r.filePath) return false;

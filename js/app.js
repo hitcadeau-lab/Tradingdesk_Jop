@@ -13,7 +13,7 @@
     const { parts, query } = parse();
     const [section, a, b] = parts;
     const V = TD.views;
-    document.querySelectorAll(".nav a").forEach((l) => l.classList.toggle("active", l.dataset.nav === (section || "markt")));
+    document.querySelectorAll("[data-nav]").forEach((l) => l.classList.toggle("active", l.dataset.nav === (section || "markt")));
 
     switch (section) {
       case "trades":
@@ -25,6 +25,8 @@
         return V.portfolio.render(root, {}, query);
       case "leerschool":
         return V.leerschool.render(root, {}, query);
+      case "instellingen":
+        return V.instellingen.render(root, {}, query);
       case "markt":
       default:
         return V.markt.render(root, { symbol: a }, query);

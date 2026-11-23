@@ -12,5 +12,9 @@ contextBridge.exposeInMainWorld("tdDesktop", {
   checkUpdate: () => ipcRenderer.invoke("td:check-update"),
   applyUpdate: () => ipcRenderer.invoke("td:apply-update"),
   saveFile: (name, content) => ipcRenderer.invoke("td:save-file", { name, content }),
+  // Sinds app-schil 2: opslagmap wijzigen.
+  chooseDataDir: () => ipcRenderer.invoke("td:choose-dir"),
+  setDataDir: (dir, mode) => ipcRenderer.invoke("td:set-data-dir", { dir, mode }),
+  revealBackups: () => ipcRenderer.invoke("td:reveal-backups"),
   onUpdateAvailable: (cb) => ipcRenderer.on("td:update-available", (_e, data) => cb(data)),
 });

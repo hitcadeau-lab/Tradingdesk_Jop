@@ -78,4 +78,24 @@ function createStorage(dir) {
   return { dir, file, backupDir, read, write, dailyBackup };
 }
 
-module.exports = { defaultDataDir, createStorage, FILE, KEEP_BACKUPS };
+// Staat er al Tradingdesk-data in een map? (voor het wisselen van opslagmap)
+function inspectDir(dir) {
+  const file = path.join(dir, FILE);
+  ensureDownloaded(file);
+  if (!fs.existsSync(file)) return { hasData: false, trades: 0 };
+  try {
+    const d = JSON.parse(fs.readFileSync(file, "utf8"));
+    const trades = d && d.store && Array.isArray(d.store["td.trades"]) ? d.store["td.trades"].length : 0;
+    return { hasData: true, trades };
+  } catch {
+    return { hasData: true, trades: 0, broken: true };
+  }
+}
+
+// Ligt een map in iCloud Drive?
+function isICloud(dir, home = os.homedir()) {
+  const icloud = path.join(home, "Library", "Mobile Documents") + path.sep;
+  return (path.resolve(dir) + path.sep).startsWith(icloud);
+}
+
+module.exports = { defaultDataDir, createStorage, inspectDir, isICloud, FILE, KEEP_BACKUPS };

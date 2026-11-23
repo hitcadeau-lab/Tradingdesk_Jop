@@ -12,11 +12,11 @@ De methode komt uit *Technical Analysis 101* en *Range Trading 101*. De checklis
    - Ga naar **Systeeminstellingen → Privacy en beveiliging**, scroll naar beneden en klik op **Open toch**.
    - Of voer dit uit in de terminal: `xattr -cr /Applications/Tradingdesk.app`
 
-**Opslag:** alles staat in `iCloud Drive/Tradingdesk/tradingdesk-data.json`, met elke dag een back-up in `iCloud Drive/Tradingdesk/backups/` (de laatste 30). Staat iCloud Drive uit, dan kiest de app `Documenten/Tradingdesk/`. Je ziet het bestand via **Portfolio → App & opslag → Toon in Finder**.
+**Opslag:** alles staat in `iCloud Drive/Tradingdesk/tradingdesk-data.json`, met elke dag een back-up in `iCloud Drive/Tradingdesk/backups/` (de laatste 30). Staat iCloud Drive uit, dan kiest de app `Documenten/Tradingdesk/`. Via **Instellingen** (rechtsboven) zie je het bestand in Finder, kies je een andere map (je data verhuist mee) of ga je terug naar de standaardmap.
 
 **Updates:** de app kijkt bij het starten of er een nieuwe versie is. Bij een update van de app-inhoud verschijnt bovenaan **Installeer update**: één klik, en de app herlaadt met de nieuwe versie. Je data blijft staan. Alleen als de app-schil zelf verandert, vraagt de app je om een nieuwe `.dmg` te downloaden.
 
-**Trades overzetten vanuit de browserversie:** maak in de browser een back-up (**Portfolio → Back-up maken**) en zet die in de app terug met **Portfolio → Back-up terugzetten**.
+**Trades overzetten vanuit de browserversie:** maak in de browser een back-up (**Instellingen → Back-up maken**) en zet die in de app terug met **Instellingen → Back-up terugzetten**.
 
 ### Hoe een update ontstaat (voor ontwikkeling)
 
@@ -33,7 +33,7 @@ Lokaal starten (met Node.js): `cd desktop && npm install && npm start`. Tests: `
 
 Open `index.html` in Safari of Chrome. Je hebt geen installatie of account nodig, wel internet voor de grafieken van TradingView.
 
-> In de browser worden je trades **alleen in die browser** bewaard (localStorage). Maak regelmatig een back-up via **Portfolio → Back-up maken**.
+> In de browser worden je trades **alleen in die browser** bewaard (localStorage). Maak regelmatig een back-up via **Instellingen → Back-up maken**.
 
 ## Onderdelen
 

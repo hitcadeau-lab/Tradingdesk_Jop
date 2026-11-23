@@ -18,20 +18,9 @@
         <h1>Portfolio</h1>
         <div class="row gap">
           <button class="btn" id="exp-csv">Exporteer naar Excel (CSV)</button>
-          <button class="btn" id="exp-json">Back-up maken</button>
-          <label class="btn">Back-up terugzetten<input type="file" id="imp-json" accept="application/json,.json" hidden></label>
+          <a class="btn" href="#/instellingen">Startkapitaal, valuta & back-ups</a>
         </div>
       </div>
-
-      <section class="panel settings-row">
-        <label class="inline">Startkapitaal
-          <input type="number" id="start-cap" step="any" min="0" value="${esc(p.startingCapital)}">
-        </label>
-        <label class="inline">Valuta
-          <select id="currency">${["$", "€", "USDT "].map((c) => `<option ${c === p.settings.currency ? "selected" : ""}>${c}</option>`).join("")}</select>
-        </label>
-        <span class="muted small">Alles hieronder wordt automatisch berekend uit je trades.</span>
-      </section>
 
       <div class="kpis">
         ${kpi("Startkapitaal", money(p.startingCapital))}
@@ -120,36 +109,11 @@
         }
       </section>
 
-      ${projection(p)}
-      ${TD.desktopUI ? TD.desktopUI.panelHTML() : ""}`;
-    if (TD.desktopUI) TD.desktopUI.bindPanel(root);
+      ${projection(p)}`;
 
-    root.querySelector("#start-cap").addEventListener("change", (e) => {
-      S.setSettings({ startingCapital: +e.target.value || 0 });
-      TD.app.rerender();
-    });
-    root.querySelector("#currency").addEventListener("change", (e) => {
-      S.setSettings({ currency: e.target.value });
-      TD.app.rerender();
-    });
     root.querySelector("#exp-csv").addEventListener("click", () =>
       download(`tradingdesk-journal-${new Date().toISOString().slice(0, 10)}.csv`, "﻿" + S.exportCSV(), "text/csv")
     );
-    root.querySelector("#exp-json").addEventListener("click", () =>
-      download(`tradingdesk-backup-${new Date().toISOString().slice(0, 10)}.json`, S.exportJSON(), "application/json")
-    );
-    root.querySelector("#imp-json").addEventListener("change", async (e) => {
-      const f = e.target.files[0];
-      if (!f) return;
-      if (!confirm("Dit vervangt al je huidige trades door die uit de back-up. Doorgaan?")) return;
-      try {
-        const n = S.importJSON(await f.text());
-        alert(`${n} trades teruggezet.`);
-        TD.app.rerender();
-      } catch (err) {
-        alert("Terugzetten mislukt: " + err.message);
-      }
-    });
 
     const pf = root.querySelector("#proj-form");
     pf.addEventListener("input", () => {

@@ -75,3 +75,13 @@ test("iCloud-map als die bestaat, anders Documenten", () => {
   assert.equal(defaultDataDir(home).icloud, true);
   assert.equal(defaultDataDir(home).dir, path.join(home, "Library", "Mobile Documents", "com~apple~CloudDocs", "Tradingdesk"));
 });
+
+test("map inspecteren en iCloud herkennen", () => {
+  const { inspectDir, isICloud } = require("../lib/storage");
+  const dir = tmp();
+  assert.deepEqual(inspectDir(dir), { hasData: false, trades: 0 });
+  createStorage(dir).write({ "td.trades": [{ id: 1 }, { id: 2 }] });
+  assert.deepEqual(inspectDir(dir), { hasData: true, trades: 2 });
+  assert.equal(isICloud("/Users/jop/Library/Mobile Documents/com~apple~CloudDocs/Trading", "/Users/jop"), true);
+  assert.equal(isICloud("/Users/jop/Documents/Trading", "/Users/jop"), false);
+});

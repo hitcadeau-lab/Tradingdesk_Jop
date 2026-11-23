@@ -1,0 +1,177 @@
+// Instellingen: trading-standaarden, opslag (map wijzigen, back-ups), app & updates, Leerschool.
+(function (TD) {
+  const { esc, download } = TD.util;
+  const S = TD.store;
+
+  function render(root) {
+    const s = S.getSettings();
+    const d = S.desktop;
+    const i = S.desktopInfo() || {};
+    const canMove = d && typeof d.chooseDataDir === "function";
+    const school = S.getSchool();
+
+    root.innerHTML = `
+      <div class="page-head"><h1>Instellingen</h1></div>
+
+      <section class="panel settings">
+        <h2>Trading</h2>
+        <div class="grid g4">
+          <label>Startkapitaal<input type="number" id="set-capital" step="any" min="0" value="${esc(s.startingCapital)}"></label>
+          <label>Valuta<select id="set-currency">${["$", "€", "USDT "].map((c) => `<option ${c === s.currency ? "selected" : ""}>${c}</option>`).join("")}</select></label>
+          <label>Standaard risico % per trade<input type="number" id="set-risk" step="0.1" min="0" value="${esc(s.defaultRisk)}"></label>
+        </div>
+        <p class="muted small">Het startkapitaal is de basis van je saldo, rendement en equity curve in Portfolio. Het standaard risico wordt ingevuld bij elke nieuwe trade.</p>
+        <p class="saved small" id="trading-saved" hidden>Opgeslagen</p>
+      </section>
+
+      <section class="panel settings">
+        <h2>Opslag</h2>
+        ${
+          d
+            ? `<dl class="dl">
+                <dt>Databestand</dt><dd class="wrap">${esc(i.dataFile || "—")} ${i.icloud ? '<span class="badge pos">iCloud</span>' : '<span class="badge warn">niet in iCloud</span>'}</dd>
+                <dt>Back-ups</dt><dd class="wrap">${esc(i.backupDir || "—")} <span class="muted">(één per dag, laatste 30)</span></dd>
+              </dl>
+              <div class="row gap">
+                <button class="btn small" id="st-reveal">Toon in Finder</button>
+                <button class="btn small" id="st-backups">Open back-upmap</button>
+                ${canMove ? `<button class="btn small primary" id="st-move">Map wijzigen…</button>` : ""}
+                ${canMove && i.customDir ? `<button class="btn small" id="st-default">Terug naar standaardmap</button>` : ""}
+              </div>
+              ${
+                canMove
+                  ? `<div id="move-box" class="move-box" hidden></div>`
+                  : `<p class="muted small">Een andere map kiezen kan vanaf app-versie 1.1.0. Installeer de nieuwste .dmg om dit te gebruiken.</p>`
+              }`
+            : `<p class="muted">In de browser worden je trades in deze browser bewaard (localStorage). Maak regelmatig een back-up.</p>`
+        }
+        <h3>Back-up</h3>
+        <div class="row gap">
+          <button class="btn small" id="st-export">Back-up maken (.json)</button>
+          <label class="btn small">Back-up terugzetten<input type="file" id="st-import" accept="application/json,.json" hidden></label>
+          <button class="btn small" id="st-csv">Exporteer journal naar Excel (CSV)</button>
+        </div>
+      </section>
+
+      <section class="panel settings">
+        <h2>App</h2>
+        <dl class="dl">
+          <dt>Versie</dt><dd>${esc(TD.VERSION)}${i.source === "update" ? ' <span class="muted">(bijgewerkt via update)</span>' : ""}</dd>
+          ${d ? `<dt>App-schil</dt><dd>${esc(i.shellVersion)}</dd>` : ""}
+        </dl>
+        ${
+          d
+            ? `<div class="row gap"><button class="btn small" id="st-check">Controleer op updates</button><span class="muted small" id="st-check-out"></span></div>`
+            : `<p class="muted small">Updates met één klik werken in de Mac-app.</p>`
+        }
+      </section>
+
+      <section class="panel settings">
+        <h2>Leerschool</h2>
+        <p>${school.answered} opdrachten beantwoord, ${school.answered ? Math.round((school.correct / school.answered) * 100) : 0}% goed, beste reeks ${school.best}.</p>
+        <button class="btn small danger" id="st-reset-school">Score resetten</button>
+      </section>`;
+
+    // ---- trading ----
+    const savedNote = root.querySelector("#trading-saved");
+    const saveTrading = () => {
+      S.setSettings({
+        startingCapital: +root.querySelector("#set-capital").value || 0,
+        currency: root.querySelector("#set-currency").value,
+        defaultRisk: Math.max(0, +root.querySelector("#set-risk").value || 0),
+      });
+      savedNote.hidden = false;
+      clearTimeout(saveTrading.t);
+      saveTrading.t = setTimeout(() => (savedNote.hidden = true), 1500);
+    };
+    ["#set-capital", "#set-currency", "#set-risk"].forEach((sel) => root.querySelector(sel).addEventListener("change", saveTrading));
+
+    // ---- opslag ----
+    if (d) {
+      root.querySelector("#st-reveal").addEventListener("click", () => d.revealData());
+      root.querySelector("#st-backups").addEventListener("click", () => (d.revealBackups ? d.revealBackups() : d.revealData()));
+    }
+    if (canMove) {
+      const box = root.querySelector("#move-box");
+      root.querySelector("#st-move").addEventListener("click", async () => {
+        const pick = await d.chooseDataDir();
+        if (!pick) return;
+        box.hidden = false;
+        box.innerHTML = `
+          <p><strong>Nieuwe map:</strong> ${esc(pick.dir)} ${pick.icloud ? '<span class="badge pos">iCloud</span>' : '<span class="badge warn">niet in iCloud</span>'}</p>
+          ${
+            pick.hasData
+              ? `<p>In deze map staat al Tradingdesk-data${pick.trades ? ` (${pick.trades} trades)` : ""}. Wil je die gebruiken? Je huidige data blijft in de oude map staan.</p>
+                 <div class="row gap"><button class="btn small primary" data-mode="use">Gebruik de data in die map</button><button class="btn small" data-cancel>Annuleren</button></div>`
+              : `<p>Je huidige data (${S.getTrades().length} trades, instellingen en watchlist) wordt naar deze map gekopieerd. De oude map blijft als reservekopie staan.</p>
+                 <div class="row gap"><button class="btn small primary" data-mode="move">Data verplaatsen naar deze map</button><button class="btn small" data-cancel>Annuleren</button></div>`
+          }
+          ${pick.icloud ? "" : '<p class="muted small">Let op: buiten iCloud Drive wordt je data niet automatisch door Apple geback-upt.</p>'}`;
+        box.querySelector("[data-cancel]").addEventListener("click", () => (box.hidden = true));
+        box.querySelector("[data-mode]").addEventListener("click", async (e) => {
+          await apply(pick.dir, e.target.dataset.mode, box);
+        });
+      });
+      const def = root.querySelector("#st-default");
+      if (def)
+        def.addEventListener("click", () => {
+          box.hidden = false;
+          box.innerHTML = `<p>Terug naar de standaardmap: <strong>${esc(i.defaultDir)}</strong>.</p>
+            <div class="row gap"><button class="btn small primary" data-mode="move">Data meenemen</button><button class="btn small" data-mode="use">Gebruik de data die daar al staat</button><button class="btn small" data-cancel>Annuleren</button></div>`;
+          box.querySelector("[data-cancel]").addEventListener("click", () => (box.hidden = true));
+          box.querySelectorAll("[data-mode]").forEach((b) => b.addEventListener("click", () => apply(null, b.dataset.mode, box)));
+        });
+    }
+
+    async function apply(dir, mode, box) {
+      try {
+        await d.setDataDir(dir, mode);
+        location.reload(); // herladen met de data uit de nieuwe map
+      } catch (err) {
+        box.insertAdjacentHTML("beforeend", `<p class="error">${esc(String(err.message || err).replace(/^Error invoking remote method '[^']+': (Error: )?/, ""))}</p>`);
+      }
+    }
+
+    // ---- back-up ----
+    const stamp = () => new Date().toISOString().slice(0, 10);
+    root.querySelector("#st-export").addEventListener("click", () => download(`tradingdesk-backup-${stamp()}.json`, S.exportJSON(), "application/json"));
+    root.querySelector("#st-csv").addEventListener("click", () => download(`tradingdesk-journal-${stamp()}.csv`, "﻿" + S.exportCSV(), "text/csv"));
+    root.querySelector("#st-import").addEventListener("change", async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      if (!confirm("Dit vervangt al je huidige trades door die uit de back-up. Doorgaan?")) return;
+      try {
+        const n = S.importJSON(await f.text());
+        alert(`${n} trades teruggezet.`);
+        TD.app.rerender();
+      } catch (err) {
+        alert("Terugzetten mislukt: " + err.message);
+      }
+    });
+
+    // ---- updates ----
+    const check = root.querySelector("#st-check");
+    if (check)
+      check.addEventListener("click", async () => {
+        const out = root.querySelector("#st-check-out");
+        out.textContent = "Controleren…";
+        const r = await d.checkUpdate();
+        if (r.status === "up-to-date") out.textContent = `Je hebt de nieuwste versie (${TD.VERSION}).`;
+        else if (r.status === "web-update" || r.status === "needs-dmg") {
+          out.textContent = "";
+          TD.desktopUI.banner(r);
+        } else out.textContent = r.message || "Controleren mislukt.";
+      });
+
+    // ---- leerschool ----
+    root.querySelector("#st-reset-school").addEventListener("click", () => {
+      if (confirm("Je Leerschool-score resetten?")) {
+        S.resetSchool();
+        render(root);
+      }
+    });
+  }
+
+  TD.views = TD.views || {};
+  TD.views.instellingen = { render };
+})(window.TD);

@@ -94,7 +94,7 @@
           tradeType: "Day trade",
           setup: "Reversal",
           entryDate: nowLocal(),
-          riskPct: 1,
+          riskPct: S.getSettings().defaultRisk,
           status: "open",
           checklist: {},
         };
