@@ -120,7 +120,9 @@
         }
       </section>
 
-      ${projection(p)}`;
+      ${projection(p)}
+      ${TD.desktopUI ? TD.desktopUI.panelHTML() : ""}`;
+    if (TD.desktopUI) TD.desktopUI.bindPanel(root);
 
     root.querySelector("#start-cap").addEventListener("change", (e) => {
       S.setSettings({ startingCapital: +e.target.value || 0 });

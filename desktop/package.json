@@ -1,0 +1,51 @@
+{
+  "name": "tradingdesk",
+  "productName": "Tradingdesk",
+  "version": "1.0.0",
+  "description": "Tradingdesk: range trading journal, portfolio en leerschool",
+  "main": "main.js",
+  "private": true,
+  "author": "Tradingdesk",
+  "license": "UNLICENSED",
+  "repository": "github:hitcadeau-lab/Tradingdesk_Jop",
+  "tradingdesk": {
+    "repo": "hitcadeau-lab/Tradingdesk_Jop",
+    "shellVersion": 1
+  },
+  "scripts": {
+    "copy-web": "node scripts/copy-web.js",
+    "start": "npm run copy-web && electron .",
+    "test": "node --test test/*.test.js",
+    "dist": "npm run copy-web && electron-builder --mac dmg zip --universal --publish never"
+  },
+  "devDependencies": {
+    "electron": "33.4.11",
+    "electron-builder": "25.1.8"
+  },
+  "build": {
+    "appId": "nl.tradingdesk.app",
+    "productName": "Tradingdesk",
+    "files": [
+      "main.js",
+      "preload.js",
+      "lib/**",
+      "web/**",
+      "package.json"
+    ],
+    "directories": {
+      "buildResources": "build",
+      "output": "dist"
+    },
+    "mac": {
+      "category": "public.app-category.finance",
+      "icon": "build/icon.png",
+      "identity": "-",
+      "hardenedRuntime": false,
+      "gatekeeperAssess": false,
+      "artifactName": "Tradingdesk-${version}-mac.${ext}"
+    },
+    "dmg": {
+      "title": "Tradingdesk ${version}"
+    }
+  }
+}

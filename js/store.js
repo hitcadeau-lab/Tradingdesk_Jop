@@ -11,7 +11,34 @@ window.TD = window.TD || {};
     school: "td.school",
   };
 
+  // Opslag-backend: in de Mac-app een JSON-bestand (via window.tdDesktop),
+  // in de browser localStorage.
+  const desktop = window.tdDesktop || null;
+  let desktopStore = null;
+  let desktopInfo = null;
+  let saveTimer = null;
+  if (desktop) {
+    try {
+      const r = desktop.load();
+      desktopStore = (r && r.store) || {};
+      desktopInfo = r && r.info;
+    } catch {
+      desktopStore = {};
+    }
+    // Bij afsluiten direct wegschrijven wat nog in de wachtrij staat.
+    window.addEventListener("beforeunload", () => {
+      if (saveTimer) {
+        clearTimeout(saveTimer);
+        saveTimer = null;
+        desktop.saveSync(desktopStore);
+      }
+    });
+  }
+
   function load(key, fallback) {
+    if (desktopStore) {
+      return Object.prototype.hasOwnProperty.call(desktopStore, key) ? JSON.parse(JSON.stringify(desktopStore[key])) : fallback;
+    }
     try {
       const raw = localStorage.getItem(key);
       return raw === null ? fallback : JSON.parse(raw);
@@ -21,6 +48,15 @@ window.TD = window.TD || {};
   }
 
   function save(key, value) {
+    if (desktopStore) {
+      desktopStore[key] = JSON.parse(JSON.stringify(value));
+      clearTimeout(saveTimer);
+      saveTimer = setTimeout(() => {
+        saveTimer = null;
+        desktop.save(desktopStore).catch((e) => alert("Opslaan in het databestand is mislukt: " + e.message));
+      }, 250);
+      return true;
+    }
     try {
       localStorage.setItem(key, JSON.stringify(value));
       return true;
@@ -462,5 +498,7 @@ window.TD = window.TD || {};
     getSchool, recordAnswer, resetSchool,
     exportJSON, importJSON, exportCSV,
     num,
+    desktop,
+    desktopInfo: () => desktopInfo,
   };
 })(window.TD);

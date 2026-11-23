@@ -60,6 +60,11 @@ window.TD = window.TD || {};
   }
 
   function download(filename, text, type) {
+    // In de Mac-app: een echt "Bewaar als"-venster.
+    if (window.tdDesktop) {
+      window.tdDesktop.saveFile(filename, text);
+      return;
+    }
     const blob = new Blob([text], { type: type || "text/plain" });
     const a = document.createElement("a");
     a.href = URL.createObjectURL(blob);
