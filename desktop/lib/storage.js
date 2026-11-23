@@ -9,10 +9,10 @@ const FILE = "tradingdesk-data.json";
 const KEEP_BACKUPS = 30;
 
 // iCloud Drive staat op de Mac in ~/Library/Mobile Documents/com~apple~CloudDocs.
-function defaultDataDir(home = os.homedir()) {
+function defaultDataDir(home = os.homedir(), name = "Tradingdesk") {
   const icloud = path.join(home, "Library", "Mobile Documents", "com~apple~CloudDocs");
-  if (fs.existsSync(icloud)) return { dir: path.join(icloud, "Tradingdesk"), icloud: true };
-  return { dir: path.join(home, "Documents", "Tradingdesk"), icloud: false };
+  if (fs.existsSync(icloud)) return { dir: path.join(icloud, name), icloud: true };
+  return { dir: path.join(home, "Documents", name), icloud: false };
 }
 
 // iCloud kan een bestand "uit de cloud" laten staan (alleen een .icloud-placeholder).

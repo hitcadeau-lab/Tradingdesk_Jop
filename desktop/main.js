@@ -12,6 +12,10 @@ const { pickWebDir, evaluate } = require("./lib/updates");
 const pkg = require("./package.json");
 
 const REPO = pkg.tradingdesk.repo;
+// "test" = testversie van een branch: eigen naam, eigen datamap, geen updates.
+const CHANNEL = pkg.tradingdesk.channel || "stable";
+const IS_TEST = CHANNEL === "test";
+const APP_NAME = IS_TEST ? "Tradingdesk Test" : "Tradingdesk";
 const SHELL_VERSION = pkg.tradingdesk.shellVersion;
 const RELEASES_URL = `https://github.com/${REPO}/releases/latest`;
 // TD_UPDATE_API en TD_HOME zijn alleen voor tests (lokale update-server, tijdelijke thuismap).
@@ -47,8 +51,9 @@ function info() {
     backupDir: storage.backupDir,
     icloud: storage.icloud,
     customDir: !!readConfig().dataDir,
-    defaultDir: defaultDataDir(home()).dir,
+    defaultDir: defaultDataDir(home(), APP_NAME).dir,
     releasesUrl: RELEASES_URL,
+    channel: CHANNEL,
   };
 }
 
@@ -70,7 +75,7 @@ function writeConfig(patch) {
 // ---------- opslag ----------
 function initStorage() {
   const custom = readConfig().dataDir;
-  const dir = custom && fs.existsSync(custom) ? custom : defaultDataDir(home()).dir;
+  const dir = custom && fs.existsSync(custom) ? custom : defaultDataDir(home(), APP_NAME).dir;
   storage = createStorage(dir);
   storage.icloud = isICloud(dir, home());
   try {
@@ -86,7 +91,7 @@ function initStorage() {
 // Opslagmap wisselen. mode "move": huidige data meenemen naar de nieuwe map.
 // mode "use": de data gebruiken die al in de nieuwe map staat. dir null = terug naar standaard.
 function setDataDir(dir, mode) {
-  const target = dir || defaultDataDir(home()).dir;
+  const target = dir || defaultDataDir(home(), APP_NAME).dir;
   if (path.resolve(target) === path.resolve(storage.dir)) return { changed: false };
   fs.mkdirSync(target, { recursive: true });
   const next = createStorage(target);
@@ -121,6 +126,7 @@ async function fetchJSON(url) {
 }
 
 async function checkForUpdate() {
+  if (IS_TEST) return (lastCheck = { status: "error", message: "Dit is een testversie: die werkt zichzelf niet bij." });
   try {
     const release = await fetchJSON(API_LATEST);
     const asset = (name) => (release.assets || []).find((a) => a.name === name);
@@ -183,7 +189,7 @@ function createWindow() {
     height: 920,
     minWidth: 900,
     minHeight: 600,
-    title: "Tradingdesk",
+    title: APP_NAME,
     backgroundColor: "#0f1115",
     webPreferences: {
       preload: path.join(__dirname, "preload.js"),
@@ -263,7 +269,7 @@ ipcMain.handle("td:save-file", async (_e, { name, content }) => {
   return r.filePath;
 });
 
-app.setName("Tradingdesk");
+app.setName(APP_NAME); // bepaalt ook de map voor app-instellingen (userData)
 app.whenReady().then(() => {
   initStorage();
   createWindow();

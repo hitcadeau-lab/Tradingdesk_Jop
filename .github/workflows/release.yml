@@ -1,5 +1,6 @@
-# Bouwt de Mac-app en publiceert een GitHub Release zodra de versie in
-# desktop/package.json omhoog gaat. De release bevat:
+# Bouwt de Mac-app en publiceert een GitHub Release zodra er op main een
+# nieuwe versie (desktop/package.json) staat. Dus pas nadat je de pull request
+# hebt goedgekeurd en samengevoegd. De release bevat:
 #  - Tradingdesk-<versie>-mac.dmg / .zip  (installatie, universal: Apple Silicon + Intel)
 #  - web-<versie>.zip                      (app-inhoud voor updates met één klik)
 #  - latest.json                           (wat de app leest om updates te vinden)
@@ -7,7 +8,7 @@ name: Release Mac-app
 
 on:
   push:
-    branches: [main, claude/keen-gates-4sbkc3]
+    branches: [main]
     paths: ["index.html", "css/**", "js/**", "desktop/**", ".github/workflows/release.yml"]
   workflow_dispatch:
 

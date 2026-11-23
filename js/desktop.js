@@ -37,6 +37,10 @@
 
   if (d) {
     document.documentElement.classList.add("is-desktop");
+    const info = TD.store.desktopInfo() || {};
+    if (info.channel === "test") {
+      document.querySelector(".brand").insertAdjacentHTML("afterend", '<span class="badge warn test-badge" title="Testversie met een eigen datamap">TEST</span>');
+    }
     d.onUpdateAvailable(banner);
   }
 

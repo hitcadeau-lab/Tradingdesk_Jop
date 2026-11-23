@@ -20,9 +20,9 @@ De methode komt uit *Technical Analysis 101* en *Range Trading 101*. De checklis
 
 ### Hoe een update ontstaat (voor ontwikkeling)
 
-1. Pas de webapp aan (`index.html`, `css/`, `js/`).
-2. Verhoog de versie op twee plekken: `js/version.js` en `desktop/package.json` (bijv. 1.0.0 → 1.0.1).
-3. Push. De GitHub Action *Release Mac-app* bouwt de `.dmg`, de web-bundel en `latest.json`, en publiceert een release.
+1. Wijzigingen komen op een werkbranch (`claude/...`). Daar bouwt de GitHub Action *Testversie Mac-app* een **Tradingdesk Test**-app (download onder *Actions → de build → Artifacts*). De testapp staat los naast de echte app, gebruikt een eigen datamap (`iCloud Drive/Tradingdesk Test`) en werkt zichzelf niet bij. Er wordt niets gepubliceerd.
+2. Is de testversie goed? Voeg dan de pull request samen in `main`.
+3. Op `main` bouwt *Release Mac-app* de officiële versie (`.dmg`, web-bundel en `latest.json`) en publiceert die als release. Dat gebeurt alleen als de versie in `desktop/package.json` en `js/version.js` hoger is dan de vorige release. Je app meldt daarna de update.
 4. Verhoog `tradingdesk.shellVersion` in `desktop/package.json` alleen als `main.js` of `preload.js` verandert. Dan installeer je een nieuwe `.dmg`.
 
 De app haalt updates op via de openbare GitHub-API. Daarvoor moet de repository **openbaar** zijn. Je trades staan nooit op GitHub.
