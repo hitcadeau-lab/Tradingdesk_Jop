@@ -81,6 +81,17 @@
     );
   }
 
+  // Geraakte levels (uit de trade-meldingen) als korte tijdlijn.
+  function hitsHTML(t) {
+    if (!TD.tradeAlerts) return "";
+    const h = TD.tradeAlerts.hitsFor(t.id);
+    const order = [["tp1", "TP1"], ["tp2", "TP2"], ["tp3", "TP3"], ["be", "Break-even"], ["sl", "Stop loss"]].filter(([k]) => h[k]);
+    if (!order.length) return t.status === "open" ? `<dt>Geraakt</dt><dd class="muted">Nog niets</dd>` : "";
+    return `<dt>Geraakt</dt><dd>${order
+      .map(([k, l]) => `<span class="badge ${k === "sl" ? "neg" : k === "be" ? "muted" : "pos"}">${l}</span> <span class="muted small">${TD.util.stamp(h[k] * 1000)}</span>`)
+      .join("<br>")}</dd>`;
+  }
+
   // ---------------- Plan & marktbeeld ----------------
   const PLAN_KEYS = ["direction", "entry", "stopLoss", "tp1", "tp2", "tp3", "rangeHigh", "rangeLow", "rangeTf", "trigger", "setup", "riskPct"];
   function makePlan(o, riskAmount) {
@@ -608,6 +619,7 @@
             <dt>Exit datum</dt><dd>${date(t.exitDate, true)}</dd>
             <dt>Totale tijd in trade</dt><dd>${S.timeInTrade(t) || "—"}</dd>
             <dt>Risico</dt><dd>${num(t.riskPct)}% · ${money(risk)}</dd>
+            ${hitsHTML(t)}
           </dl>
           <h2>Range</h2>
           <dl class="dl">

@@ -16,6 +16,7 @@
     if (section !== "notifier" && V.notifier) V.notifier.teardown();
     if (section !== "advise" && V.advise) V.advise.teardown();
     if (V.trades) V.trades.teardown();
+    if (section !== "meldingen" && V.meldingen) V.meldingen.teardown();
     document.querySelectorAll("[data-nav]").forEach((l) => l.classList.toggle("active", l.dataset.nav === (section || "markt")));
 
     switch (section) {
@@ -32,6 +33,8 @@
         return V.notifier.render(root, { id: a }, query);
       case "advise":
         return V.advise.render(root, { id: a }, query);
+      case "meldingen":
+        return V.meldingen.render(root, {}, query);
       case "instellingen":
         return V.instellingen.render(root, {}, query);
       case "markt":
@@ -64,8 +67,22 @@
     el.hidden = n === 0;
   }
 
+  // Teller op de bel (ongelezen meldingen).
+  function paintBell() {
+    const el = document.getElementById("bell-count");
+    if (!el || !TD.inbox) return;
+    const n = TD.inbox.unreadCount();
+    el.textContent = n > 99 ? "99+" : n;
+    el.hidden = n === 0;
+  }
+
   TD.app = { rerender };
   route();
+  if (TD.inbox) {
+    TD.inbox.onChange(paintBell);
+    paintBell();
+  }
+  if (TD.tradeAlerts) TD.tradeAlerts.start();
   if (TD.notifier) {
     TD.notifier.onChange(paintCount);
     paintCount();

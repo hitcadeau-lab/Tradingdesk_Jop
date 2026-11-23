@@ -187,7 +187,18 @@
     saveSignals(list);
     lastScanAt = Date.now();
     scanning = false;
-    toNotify.forEach(notify);
+    toNotify.forEach((sig) => {
+      notify(sig);
+      if (TD.inbox)
+        TD.inbox.add({
+          key: `setup|${sig.id}|${sig.status}`,
+          kind: "setup",
+          title: title(sig),
+          body: `${describe(sig)} TP1 (mid) ${TD.util.price(sig.tp1)} · R:R ${sig.rr1.toFixed(1)}`,
+          link: "#/notifier/" + encodeURIComponent(sig.id),
+          silent: true,
+        });
+    });
     emit();
     return toNotify;
   }

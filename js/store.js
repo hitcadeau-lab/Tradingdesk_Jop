@@ -441,6 +441,9 @@ window.TD = window.TD || {};
         watchlist: getWatchlist(),
         notifier: load("td.notifier", null),
         advice: load("td.advice", []),
+        inbox: load("td.inbox", []),
+        alerts: load("td.alerts", null),
+        tradeHits: load("td.tradeHits", {}),
       },
       null,
       2
@@ -455,6 +458,9 @@ window.TD = window.TD || {};
     if (Array.isArray(d.watchlist)) save(KEYS.watchlist, d.watchlist);
     if (d.notifier) save("td.notifier", d.notifier);
     if (Array.isArray(d.advice)) save("td.advice", d.advice);
+    if (Array.isArray(d.inbox)) save("td.inbox", d.inbox);
+    if (d.alerts) save("td.alerts", d.alerts);
+    if (d.tradeHits) save("td.tradeHits", d.tradeHits);
     return d.trades.length;
   }
 
