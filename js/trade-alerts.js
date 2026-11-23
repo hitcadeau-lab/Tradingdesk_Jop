@@ -106,5 +106,21 @@
     });
   }
 
-  TD.tradeAlerts = { start, check, detect, hitsFor, lastRun: () => lastRun };
+  // Link naar het sluitformulier, vooraf ingevuld op basis van wat er geraakt is.
+  function closeLink(trade) {
+    const h = hitsFor(trade.id);
+    const base = `#/trades/${trade.id}/edit?close=1`;
+    let outcome = null, at = null, why = "";
+    if (h.sl) [outcome, at, why] = ["Stop Loss", h.sl, "stop loss geraakt"];
+    else if (h.tp2 || h.tp3) [outcome, at, why] = ["TP1 + TP2", h.tp2 || h.tp3, h.tp3 && !h.tp2 ? "TP3 geraakt" : "TP1 en TP2 geraakt"];
+    else if (h.be) [outcome, at, why] = ["TP1 + BE", h.be, "TP1 geraakt en daarna terug op entry"];
+    else if (h.tp1) [outcome, at, why] = ["TP1 + BE", h.tp1, "TP1 geraakt (rest nog open: kies zelf als het anders liep)"];
+    if (!outcome) return base;
+    const d = new Date(at * 1000);
+    d.setMinutes(d.getMinutes() - d.getTimezoneOffset());
+    const q = new URLSearchParams({ outcome, exitDate: d.toISOString().slice(0, 16), autopnl: "1", from: "alerts", why });
+    return `${base}&${q}`;
+  }
+
+  TD.tradeAlerts = { start, check, detect, hitsFor, closeLink, lastRun: () => lastRun };
 })(window.TD);

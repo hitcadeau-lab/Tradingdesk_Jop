@@ -318,6 +318,7 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .inbox-text { color: var(--muted); font-size: 13px; }
 .inbox-meta { color: var(--muted); font-size: 12px; }
 .inbox-actions { display: flex; align-items: center; gap: 6px; flex-shrink: 0; }
+.prefill-note { margin: 0 0 4px; padding: 8px 12px; border-radius: 6px; background: rgba(41, 98, 255, .12); border: 1px solid rgba(41, 98, 255, .35); font-size: 13px; }
 .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent); display: inline-block; flex-shrink: 0; }
 @media (max-width: 640px) { .inbox-item { flex-wrap: wrap; } .inbox-actions { width: 100%; justify-content: flex-end; } }
 

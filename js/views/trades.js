@@ -269,8 +269,11 @@
     const focusClose = query.get("close") === "1";
     if (focusClose && t.status === "open") {
       t.status = "closed";
-      t.exitDate = t.exitDate || nowLocal();
+      // Vooraf ingevuld vanuit de geraakte levels (melding of detailpagina).
+      if (query.get("outcome")) t.outcome = query.get("outcome");
+      t.exitDate = query.get("exitDate") || t.exitDate || nowLocal();
     }
+    const autoPnl = focusClose && query.get("autopnl") === "1" && (t.pnl === null || t.pnl === undefined || t.pnl === "");
 
     const opt = (list, val) =>
       list.map((o) => `<option ${o === val ? "selected" : ""}>${esc(o)}</option>`).join("");
@@ -550,8 +553,20 @@
     });
 
     paintChecklist();
-    paintCalc();
-    if (focusClose) root.querySelector("#close-fields").scrollIntoView({ behavior: "smooth" });
+    const sug0 = paintCalc();
+    if (autoPnl && sug0 !== null) {
+      form.pnl.value = Math.round(sug0 * 100) / 100;
+      paintCalc();
+    }
+    if (focusClose) {
+      const box = root.querySelector("#close-fields");
+      if (query.get("from") === "alerts")
+        box.insertAdjacentHTML(
+          "afterbegin",
+          `<p class="prefill-note span4">Vooraf ingevuld op basis van de geraakte levels: ${esc(query.get("why") || "")}. Controleer uitkomst, exit en PnL, en vul ‘Plan gevolgd?’ en je les zelf in.</p>`
+        );
+      box.scrollIntoView({ behavior: "smooth" });
+    }
   }
 
   // ---------------- Detail ----------------
@@ -590,7 +605,7 @@
           <div class="muted">${esc(t.setup)} · ${esc(t.tradeType)} · <a href="#/markt/${encodeURIComponent(t.ticker)}">${esc(t.ticker)} in Markt</a></div>
         </div>
         <div class="row gap">
-          ${t.status === "open" ? `<a class="btn primary" href="#/trades/${t.id}/edit?close=1">Trade sluiten</a>` : ""}
+          ${t.status === "open" ? `<a class="btn primary" href="${TD.tradeAlerts ? TD.tradeAlerts.closeLink(t) : `#/trades/${t.id}/edit?close=1`}">Trade sluiten</a>` : ""}
           <a class="btn" href="#/trades/${t.id}/edit">Bewerken</a>
           <button class="btn danger" id="del">Verwijderen</button>
         </div>

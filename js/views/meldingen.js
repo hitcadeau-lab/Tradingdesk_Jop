@@ -9,6 +9,15 @@
   const ICON = { tp: "▲", sl: "✕", be: "＝", setup: "◆" };
   const KIND = { tp: "Take profit", sl: "Stop loss", be: "Break-even", setup: "Setup" };
 
+  // "Trade sluiten" bij trade-meldingen zolang de trade nog open staat.
+  function closeBtn(n) {
+    if (!n.tradeId || !["tp", "sl", "be"].includes(n.kind)) return "";
+    const t = TD.store.getTrade(n.tradeId);
+    if (!t) return "";
+    if (t.status !== "open") return `<span class="badge muted">Gesloten</span>`;
+    return `<a class="btn small primary" href="${esc(TD.tradeAlerts.closeLink(t))}" data-open="${esc(n.id)}">Trade sluiten</a>`;
+  }
+
   function teardown() {
     if (unsub) unsub();
     unsub = null;
@@ -51,6 +60,7 @@
                     <span class="inbox-meta">${esc(KIND[n.kind] || "")} · ${esc(stamp(n.at))}</span>
                   </a>
                   <span class="inbox-actions">
+                    ${closeBtn(n)}
                     <button class="btn small" data-toggle="${esc(n.id)}" title="${n.read ? "Markeer als ongelezen" : "Markeer als gelezen"}">${n.read ? "Ongelezen" : "Gelezen"}</button>
                     <button class="icon" data-del="${esc(n.id)}" title="Verwijderen" aria-label="Verwijderen">×</button>
                   </span>
