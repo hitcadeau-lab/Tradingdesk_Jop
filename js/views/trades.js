@@ -147,6 +147,90 @@
     snapCleanup = () => chart.remove();
   }
 
+  // ---------------- Live chart in het formulier ----------------
+  // Laadt candles bij een ander pair/timeframe; de lijnen worden bij elke invoer bijgewerkt.
+  function liveChart(el, titleEl, msgEl) {
+    let chart = null, series = null, lines = [], key = null, loading = null, timer = null, last = null;
+    const LC = window.LightweightCharts;
+    function clearLines() {
+      if (series) lines.forEach((l) => series.removePriceLine(l));
+      lines = [];
+    }
+    function drawLines(o) {
+      if (!series) return;
+      clearLines();
+      const add = (price, color, title, dashed) => {
+        if (price === null || price === undefined || price === "" || isNaN(+price)) return;
+        lines.push(series.createPriceLine({ price: +price, color, lineWidth: dashed ? 1 : 2, lineStyle: dashed ? LC.LineStyle.Dashed : LC.LineStyle.Solid, axisLabelVisible: true, title }));
+      };
+      if (o.rangeHigh != null && o.rangeLow != null && +o.rangeHigh > +o.rangeLow) {
+        add(o.rangeHigh, "#ef5350", "Range high", true);
+        add((+o.rangeHigh + +o.rangeLow) / 2, "#f5a623", "Mid", true);
+        add(o.rangeLow, "#26a69a", "Range low", true);
+      }
+      add(o.entry, "#2962ff", "Entry");
+      add(o.stopLoss, "#ef5350", "SL");
+      add(o.tp1, "#f5a623", "TP1");
+      add(o.tp2, "#26a69a", "TP2");
+      add(o.tp3, "#26a69a", "TP3");
+    }
+    async function load(ticker, tf) {
+      const k = ticker + "|" + tf;
+      if (k === key || loading === k) return;
+      loading = k;
+      msgEl.hidden = true;
+      try {
+        const candles = await TD.marketData.candles(ticker, tf, 300);
+        if (loading !== k) return;
+        if (chart) chart.remove();
+        chart = LC.createChart(el, {
+          height: 380, autoSize: true,
+          layout: { background: { color: "#0f1115" }, textColor: "#8b919c" },
+          grid: { vertLines: { color: "#1f232c" }, horzLines: { color: "#1f232c" } },
+          rightPriceScale: { borderColor: "#262a33" },
+          timeScale: { borderColor: "#262a33", timeVisible: true },
+          localization: { locale: "nl-NL" },
+        });
+        series = chart.addCandlestickSeries({ upColor: "#26a69a", downColor: "#ef5350", wickUpColor: "#26a69a", wickDownColor: "#ef5350", borderVisible: false });
+        series.setData(candles.slice(-200).map((c) => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
+        lines = [];
+        key = k;
+        el.hidden = false;
+        titleEl.textContent = `(${shortSym(ticker)} · ${TD.marketData.TF[tf].label})`;
+        if (last) drawLines(last);
+      } catch (e) {
+        if (chart) chart.remove();
+        chart = series = null;
+        key = null;
+        el.hidden = true;
+        msgEl.hidden = false;
+        msgEl.textContent = `Geen chart: ${e.message}`;
+      } finally {
+        if (loading === k) loading = null;
+      }
+    }
+    return {
+      update(o) {
+        last = o;
+        drawLines(o);
+        const tf = SNAP_TF[o.rangeTf] || "1h";
+        if (!o.ticker || !TD.marketData.source(o.ticker)) {
+          titleEl.textContent = "";
+          msgEl.hidden = false;
+          msgEl.textContent = "Vul een pair in om de chart te zien.";
+          return;
+        }
+        clearTimeout(timer);
+        timer = setTimeout(() => load(o.ticker, tf), 400); // wachten tot je klaar bent met typen
+      },
+      destroy() {
+        clearTimeout(timer);
+        if (chart) chart.remove();
+        chart = null;
+      },
+    };
+  }
+
   // ---------------- Formulier ----------------
   function renderForm(root, params, query) {
     const editing = params.id ? S.getTrade(params.id) : null;
@@ -263,6 +347,11 @@
               <div id="levels-viz"></div>
             </div>
           </div>
+          <div class="form-chart-wrap">
+            <div class="label">Chart met je levels <span class="muted" id="form-chart-title"></span></div>
+            <div id="form-chart" class="snap-chart"></div>
+            <p class="muted small" id="form-chart-msg" hidden></p>
+          </div>
         </section>
 
         <section class="panel">
@@ -296,6 +385,9 @@
 
     const form = root.querySelector("#trade-form");
     let drawing = t.drawing || null;
+    teardown();
+    const live = window.LightweightCharts ? liveChart(root.querySelector("#form-chart"), root.querySelector("#form-chart-title"), root.querySelector("#form-chart-msg")) : null;
+    if (live) snapCleanup = () => live.destroy();
 
     // ----- checklist live status -----
     function readChecklist() {
@@ -379,6 +471,7 @@
       }
       root.querySelector("#range-warn").textContent = rw;
       root.querySelector("#levels-viz").innerHTML = TD.levelsViz.html({ ...o, riskAmount: risk, currency: S.getSettings().currency });
+      if (live) live.update(o);
       const sug = S.suggestedPnl(o, risk);
       root.querySelector("#pnl-suggest").textContent =
         o.status === "closed" && sug !== null ? `Voorstel: ${money(sug)} (50% op TP1, rest op BE/TP2)` : "";

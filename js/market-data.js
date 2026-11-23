@@ -41,7 +41,13 @@
         lastErr = e;
       }
     }
-    throw new Error(/Invalid symbol/i.test(lastErr && lastErr.message) ? `${id} bestaat niet op Binance.` : `Binance niet bereikbaar (${lastErr && lastErr.message}).`);
+    // Een onbekend pair geeft bij Binance een fout zonder CORS-header ("Failed to fetch"),
+    // net als offline zijn. Daarom één duidelijke melding voor beide.
+    throw new Error(
+      /Invalid symbol/i.test(lastErr && lastErr.message)
+        ? `${id} bestaat niet op Binance.`
+        : `Geen koersdata voor ${id} bij Binance. Bestaat dit pair op Binance, en ben je online?`
+    );
   }
 
   async function yahoo(id, tf, limit) {
