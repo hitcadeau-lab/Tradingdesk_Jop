@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Tradingdesk</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <header class="topbar">
+    <h1>Tradingdesk</h1>
+    <div class="current">
+      <span id="current-symbol">—</span>
+    </div>
+    <label class="interval">
+      Interval
+      <select id="interval">
+        <option value="5">5 min</option>
+        <option value="15">15 min</option>
+        <option value="60">1 uur</option>
+        <option value="240">4 uur</option>
+        <option value="D" selected>Dag</option>
+        <option value="W">Week</option>
+        <option value="M">Maand</option>
+      </select>
+    </label>
+  </header>
+
+  <main class="layout">
+    <aside class="watchlist">
+      <h2>Watchlist</h2>
+      <form id="add-form" autocomplete="off">
+        <input id="add-input" type="text" placeholder="Ticker, bijv. AAPL of EURONEXT:ASML" aria-label="Ticker toevoegen">
+        <button type="submit">Toevoegen</button>
+      </form>
+      <p id="add-error" class="error" hidden></p>
+      <ul id="list"></ul>
+      <p class="hint">Tip: gebruik <code>BEURS:TICKER</code> als een aandeel niet gevonden wordt, bijv. <code>EURONEXT:ADYEN</code>.</p>
+    </aside>
+
+    <section class="chart-panel">
+      <div id="chart" class="widget"></div>
+    </section>
+
+    <section class="ta-panel">
+      <h2>Technische analyse</h2>
+      <div id="ta" class="widget"></div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    Grafieken en analyse door <a href="https://www.tradingview.com/" target="_blank" rel="noopener">TradingView</a>. Geen beleggingsadvies.
+  </footer>
+
+  <script src="https://s3.tradingview.com/tv.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
