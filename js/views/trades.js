@@ -90,9 +90,15 @@
       ? JSON.parse(JSON.stringify(editing))
       : {
           ticker: query.get("ticker") || "",
-          direction: "Long",
+          direction: query.get("direction") || "Long",
           tradeType: "Day trade",
-          setup: "Reversal",
+          setup: query.get("setup") || "Reversal",
+          // Vooraf ingevuld vanuit een Notifier-melding:
+          rangeTf: query.get("rangeTf") || "",
+          trigger: query.get("trigger") || "",
+          ...Object.fromEntries(
+            ["rangeHigh", "rangeLow", "entry", "stopLoss", "tp1", "tp2"].filter((k) => query.get(k) !== null).map((k) => [k, +query.get(k)])
+          ),
           entryDate: nowLocal(),
           riskPct: S.getSettings().defaultRisk,
           status: "open",

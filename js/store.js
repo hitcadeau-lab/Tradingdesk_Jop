@@ -439,6 +439,7 @@ window.TD = window.TD || {};
         settings: getSettings(),
         trades: getTrades(),
         watchlist: getWatchlist(),
+        notifier: load("td.notifier", null),
       },
       null,
       2
@@ -451,6 +452,7 @@ window.TD = window.TD || {};
     save(KEYS.trades, d.trades);
     if (d.settings) save(KEYS.settings, d.settings);
     if (Array.isArray(d.watchlist)) save(KEYS.watchlist, d.watchlist);
+    if (d.notifier) save("td.notifier", d.notifier);
     return d.trades.length;
   }
 
@@ -500,5 +502,8 @@ window.TD = window.TD || {};
     num,
     desktop,
     desktopInfo: () => desktopInfo,
+    // Voor andere modules (Notifier) die hun eigen sleutels in dezelfde opslag bewaren.
+    _load: load,
+    _save: save,
   };
 })(window.TD);

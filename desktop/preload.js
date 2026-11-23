@@ -16,5 +16,7 @@ contextBridge.exposeInMainWorld("tdDesktop", {
   chooseDataDir: () => ipcRenderer.invoke("td:choose-dir"),
   setDataDir: (dir, mode) => ipcRenderer.invoke("td:set-data-dir", { dir, mode }),
   revealBackups: () => ipcRenderer.invoke("td:reveal-backups"),
+  // Sinds app-schil 3: koersdata (aandelen, Yahoo Finance) voor de Notifier.
+  fetchJSON: (url) => ipcRenderer.invoke("td:fetch-json", url),
   onUpdateAvailable: (cb) => ipcRenderer.on("td:update-available", (_e, data) => cb(data)),
 });

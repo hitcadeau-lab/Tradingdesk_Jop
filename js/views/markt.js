@@ -10,6 +10,12 @@
     interval = localStorage.getItem("td.interval") || "D";
   } catch {}
   if (!(interval in TA_INTERVAL)) interval = "D";
+  // Grafiekweergave: "tv" (TradingView-widget) of een range-timeframe ("1h", "4h").
+  let chartMode = "tv";
+  try {
+    chartMode = localStorage.getItem("td.chartMode") || "tv";
+  } catch {}
+  let rangeCleanup = null;
 
   function render(root, params) {
     const wl = S.getWatchlist();
@@ -65,10 +71,15 @@
                   .join("")}
               </select>
             </label>
+            <span class="view-toggle" role="group" aria-label="Grafiekweergave">
+              ${[["tv", "TradingView"], ["1h", "Range 1H"], ["4h", "Range 4H"]]
+                .map(([k, l]) => `<button type="button" data-mode="${k}" class="${chartMode === k ? "active" : ""}">${l}</button>`)
+                .join("")}
+            </span>
             <a class="btn primary" href="#/trades/new?ticker=${encodeURIComponent(selected)}">+ Nieuwe trade op ${esc(shortSym(selected))}</a>
           </div>
           <div class="markt-grid">
-            <div class="panel chart-panel"><div id="tv-chart" class="tv-widget"></div></div>
+            <div class="panel chart-panel"><div id="tv-chart" class="tv-widget"></div><div id="range-summary" class="range-summary" hidden></div></div>
             <div class="panel ta-panel"><h2>Technische analyse</h2><div id="tv-ta" class="tv-widget ta"></div></div>
           </div>
           <div class="panel">
@@ -123,7 +134,37 @@
         mountWidgets(selected);
       });
 
+    root.querySelectorAll("[data-mode]").forEach((b) =>
+      b.addEventListener("click", () => {
+        chartMode = b.dataset.mode;
+        try {
+          localStorage.setItem("td.chartMode", chartMode);
+        } catch {}
+        root.querySelectorAll("[data-mode]").forEach((x) => x.classList.toggle("active", x === b));
+        mountWidgets(selected);
+      })
+    );
+
     if (selected) mountWidgets(selected);
+  }
+
+  // Range-weergave: automatisch gevonden range + setup in Lightweight Charts.
+  async function mountRange(symbol, chart) {
+    const sum = document.getElementById("range-summary");
+    try {
+      const res = await TD.rangeChart.render(chart, symbol, chartMode, { height: 560 });
+      rangeCleanup = res.cleanup;
+      const R = res.range, g = res.signal, nm = TD.notifier;
+      sum.hidden = false;
+      sum.innerHTML = R
+        ? `Range ${TD.util.num(R.low, 6)} – ${TD.util.num(R.high, 6)} · mid ${TD.util.num(R.mid, 6)} · ${
+            g ? `<strong>${esc(g.direction)}</strong>: ${esc(nm.describe({ ...g, status: g.status }))}` : "geen setup op dit moment"
+          } · <a href="#/notifier/range?symbol=${encodeURIComponent(symbol)}&tf=${chartMode}">details</a>`
+        : "Geen geldige range gevonden op dit timeframe: de markt trendt of is uitgebroken.";
+    } catch (e) {
+      chart.innerHTML = `<p class="neg pad">${esc(e.message)}</p>`;
+      sum.hidden = true;
+    }
   }
 
   function tradesFor(symbol) {
@@ -148,8 +189,14 @@
     const chart = document.getElementById("tv-chart");
     const ta = document.getElementById("tv-ta");
     if (!chart || !ta) return;
+    if (rangeCleanup) rangeCleanup();
+    rangeCleanup = null;
     chart.innerHTML = "";
-    if (typeof TradingView === "undefined") {
+    const sum = document.getElementById("range-summary");
+    if (sum) sum.hidden = true;
+    if (chartMode !== "tv") {
+      mountRange(symbol, chart);
+    } else if (typeof TradingView === "undefined") {
       chart.innerHTML = `<p class="muted pad">TradingView kon niet laden. Controleer je internetverbinding.</p>`;
     } else {
       new TradingView.widget({

@@ -13,6 +13,7 @@
     const { parts, query } = parse();
     const [section, a, b] = parts;
     const V = TD.views;
+    if (section !== "notifier" && V.notifier) V.notifier.teardown();
     document.querySelectorAll("[data-nav]").forEach((l) => l.classList.toggle("active", l.dataset.nav === (section || "markt")));
 
     switch (section) {
@@ -25,6 +26,8 @@
         return V.portfolio.render(root, {}, query);
       case "leerschool":
         return V.leerschool.render(root, {}, query);
+      case "notifier":
+        return V.notifier.render(root, { id: a }, query);
       case "instellingen":
         return V.instellingen.render(root, {}, query);
       case "markt":
@@ -48,6 +51,20 @@
     window.scrollTo(0, 0);
   });
 
+  // Teller met nieuwe meldingen naast "Notifier".
+  function paintCount() {
+    const el = document.getElementById("nav-count");
+    if (!el || !TD.notifier) return;
+    const n = TD.notifier.unseenCount();
+    el.textContent = n;
+    el.hidden = n === 0;
+  }
+
   TD.app = { rerender };
   route();
+  if (TD.notifier) {
+    TD.notifier.onChange(paintCount);
+    paintCount();
+    TD.notifier.start();
+  }
 })(window.TD);

@@ -268,6 +268,20 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .theory-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 12px; margin-top: 12px; }
 .theory-grid p { margin: 0; color: var(--muted); }
 
+/* ---------- notifier ---------- */
+.nav-count { display: inline-block; min-width: 18px; padding: 0 5px; margin-left: 4px; border-radius: 9px; background: var(--neg); color: #fff; font-size: 11px; font-weight: 700; line-height: 18px; text-align: center; }
+.nav-count[hidden] { display: none; }
+.table tr.unseen td { background: rgba(245, 166, 35, .08); }
+.table tr.unseen td:first-child { box-shadow: inset 3px 0 0 var(--warn); }
+.table .center, .table th.center { text-align: center; }
+.warn-text { color: var(--warn); }
+.range-chart { width: 100%; height: 460px; }
+.steps { margin: 6px 0 10px; padding-left: 18px; color: var(--muted); display: grid; gap: 4px; }
+.view-toggle { display: inline-flex; border: 1px solid var(--border); border-radius: 6px; overflow: hidden; }
+.view-toggle button { border: none; border-radius: 0; background: transparent; color: var(--muted); padding: 6px 12px; cursor: pointer; }
+.view-toggle button.active { background: rgba(41, 98, 255, .2); color: #fff; }
+.range-summary { padding: 10px 14px; border-top: 1px solid var(--border); font-size: 13px; }
+
 /* ---------- instellingen ---------- */
 .top-actions { display: flex; gap: 8px; align-items: center; }
 .settings-link { padding: 7px 10px; }

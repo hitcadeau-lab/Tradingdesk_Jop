@@ -248,6 +248,15 @@ ipcMain.handle("td:reveal", () => shell.showItemInFolder(storage.file));
 ipcMain.handle("td:open-releases", () => shell.openExternal((lastCheck && lastCheck.releaseUrl) || RELEASES_URL));
 ipcMain.handle("td:check-update", () => checkForUpdate());
 ipcMain.handle("td:apply-update", () => applyUpdate());
+// Koersdata ophalen buiten de browserbeperkingen om (alleen voor deze hosts).
+const FETCH_HOSTS = ["query1.finance.yahoo.com", "query2.finance.yahoo.com"];
+ipcMain.handle("td:fetch-json", async (_e, url) => {
+  const u = new URL(url);
+  if (u.protocol !== "https:" || !FETCH_HOSTS.includes(u.hostname)) throw new Error("Deze bron is niet toegestaan.");
+  const res = await net.fetch(u.toString(), { headers: { "User-Agent": "Mozilla/5.0 (Macintosh) Tradingdesk-App", Accept: "application/json" } });
+  if (!res.ok) throw new Error(`Koersdata niet beschikbaar (${res.status}).`);
+  return res.json();
+});
 ipcMain.handle("td:choose-dir", async () => {
   const r = await dialog.showOpenDialog(win, {
     title: "Kies een map voor je Tradingdesk-data",
