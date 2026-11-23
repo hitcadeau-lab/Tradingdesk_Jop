@@ -35,6 +35,14 @@
     if (later) later.addEventListener("click", () => el.remove());
   }
 
+  // Lokale preview (preview.sh): duidelijk label, zodat je weet dat dit niet je echte app is.
+  if (!d && /^(localhost|127\.0\.0\.1)$/.test(location.hostname)) {
+    document.querySelector(".brand").insertAdjacentHTML(
+      "afterend",
+      `<span class="badge warn test-badge" title="Lokale preview met eigen browserdata">PREVIEW ${esc(TD.VERSION)}</span>`
+    );
+  }
+
   if (d) {
     document.documentElement.classList.add("is-desktop");
     const info = TD.store.desktopInfo() || {};

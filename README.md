@@ -18,11 +18,11 @@ De methode komt uit *Technical Analysis 101* en *Range Trading 101*. De checklis
 
 **Trades overzetten vanuit de browserversie:** maak in de browser een back-up (**Instellingen → Back-up maken**) en zet die in de app terug met **Instellingen → Back-up terugzetten**.
 
-### Hoe een update ontstaat (voor ontwikkeling)
+### Hoe een update ontstaat
 
-1. Wijzigingen komen op een werkbranch (`claude/...`). Daar bouwt de GitHub Action *Testversie Mac-app* een **Tradingdesk Test**-app (download onder *Actions → de build → Artifacts*). De testapp staat los naast de echte app, gebruikt een eigen datamap (`iCloud Drive/Tradingdesk Test`) en werkt zichzelf niet bij. Er wordt niets gepubliceerd.
-2. Is de testversie goed? Voeg dan de pull request samen in `main`.
-3. Op `main` bouwt *Release Mac-app* de officiële versie (`.dmg`, web-bundel en `latest.json`) en publiceert die als release. Dat gebeurt alleen als de versie in `desktop/package.json` en `js/version.js` hoger is dan de vorige release. Je app meldt daarna de update.
+1. Wijzigingen komen eerst op de preview-branch (`claude/keen-gates-4sbkc3`).
+2. Bekijk ze lokaal: `./preview.sh` opent `http://localhost:8765`. Het script haalt elke 10 seconden de nieuwste wijzigingen op; ververs de pagina om ze te zien. De preview gebruikt eigen browserdata, dus je echte app en trades worden niet aangeraakt.
+3. Goedgekeurd? Dan gaan de wijzigingen naar `main`. Daar bouwt de GitHub Action *Release Mac-app* de officiële versie (`.dmg`, web-bundel en `latest.json`) en publiceert die, mits de versie in `desktop/package.json` en `js/version.js` hoger is dan de vorige release. Je app meldt daarna de update.
 4. Verhoog `tradingdesk.shellVersion` in `desktop/package.json` alleen als `main.js` of `preload.js` verandert. Dan installeer je een nieuwe `.dmg`.
 
 De app haalt updates op via de openbare GitHub-API. Daarvoor moet de repository **openbaar** zijn. Je trades staan nooit op GitHub.
