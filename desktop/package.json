@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.5.0",
+  "version": "1.6.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -10,9 +10,9 @@
   "repository": "github:hitcadeau-lab/Tradingdesk_Jop",
   "tradingdesk": {
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
-    "shellVersion": 4,
-    "webMinShell": 4,
-    "releaseNotes": "Exchange (papier-modus): trades simuleren bij Kraken Futures op echte koersen, met fill-status en live PnL in het overzicht en positie sluiten vanuit Tradingdesk. Crypto-koersen komen nu van Kraken Futures. Vraagt een nieuwe .dmg."
+    "shellVersion": 5,
+    "webMinShell": 5,
+    "releaseNotes": "Kraken-account koppelen (alleen lezen): je echte saldo, equity en posities, en je startkapitaal uit Kraken. De API-key staat versleuteld in de macOS-sleutelhanger. Vraagt een nieuwe .dmg."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
