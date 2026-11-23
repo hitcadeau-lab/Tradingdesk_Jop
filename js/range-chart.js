@@ -46,8 +46,8 @@
       ];
       if (signal) {
         const long = signal.direction === "Long";
-        markers.push({ time: signal.deviationTime, position: long ? "belowBar" : "aboveBar", color: COL.mid, shape: long ? "arrowUp" : "arrowDown", text: "Deviatie" });
-        markers.push({ time: signal.reclaimTime, position: long ? "belowBar" : "aboveBar", color: COL.entry, shape: long ? "arrowUp" : "arrowDown", text: "Reclaim" });
+        if (signal.deviationTime) markers.push({ time: signal.deviationTime, position: long ? "belowBar" : "aboveBar", color: COL.mid, shape: long ? "arrowUp" : "arrowDown", text: "Deviatie" });
+        if (signal.reclaimTime) markers.push({ time: signal.reclaimTime, position: long ? "belowBar" : "aboveBar", color: COL.entry, shape: long ? "arrowUp" : "arrowDown", text: "Reclaim" });
         if (signal.retestTime) markers.push({ time: signal.retestTime, position: long ? "belowBar" : "aboveBar", color: COL.up, shape: long ? "arrowUp" : "arrowDown", text: "Retest" });
         series.createPriceLine({ price: signal.stopLoss, color: COL.sl, lineWidth: 1, lineStyle: LC.LineStyle.Solid, axisLabelVisible: true, title: "SL" });
         series.createPriceLine({ price: signal.entry, color: COL.entry, lineWidth: 1, lineStyle: LC.LineStyle.Solid, axisLabelVisible: true, title: "Entry" });

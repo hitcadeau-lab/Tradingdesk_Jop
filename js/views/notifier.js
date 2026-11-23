@@ -226,6 +226,7 @@
         </section>
         <section class="panel" id="d-levels"></section>
         <section class="panel" id="d-range"></section>
+        <section class="panel span2" id="d-history"></section>
       </div>`;
 
     let res;
@@ -260,34 +261,87 @@
       : "";
 
     const actions = root.querySelector("#d-actions");
-    if (signal && range) {
-      const q = new URLSearchParams({
-        ticker: sym,
-        direction: signal.direction,
-        setup: "Reclaim",
-        trigger: "Deviatie + reclaim + retest",
-        rangeTf: N.tfLabel(frame),
-        rangeHigh: +range.high.toPrecision(10),
-        rangeLow: +range.low.toPrecision(10),
-        entry: +signal.entry.toPrecision(10),
-        stopLoss: +signal.stopLoss.toPrecision(10),
-        tp1: +signal.tp1.toPrecision(10),
-        tp2: +signal.tp2.toPrecision(10),
+    const E = TD.rangeEngine;
+
+    // Advies maken en doorsturen naar Advise.
+    async function makeAdvice(btn, base, opts) {
+      const label = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Advies maken…";
+      try {
+        const item = await TD.advise.fromSignal(base, { candles: res.candles, ...opts });
+        location.hash = "#/advise/" + encodeURIComponent(item.id);
+      } catch (err) {
+        btn.disabled = false;
+        btn.textContent = label;
+        alert("Advies maken mislukt: " + err.message);
+      }
+    }
+
+    if (range) {
+      const tradeQ = (g) =>
+        new URLSearchParams({
+          ticker: sym, direction: g.direction, setup: "Reclaim", trigger: "Deviatie + reclaim + retest", rangeTf: N.tfLabel(frame),
+          rangeHigh: +range.high.toPrecision(10), rangeLow: +range.low.toPrecision(10), entry: +g.entry.toPrecision(10),
+          stopLoss: +g.stopLoss.toPrecision(10), tp1: +g.tp1.toPrecision(10), tp2: +g.tp2.toPrecision(10),
+        });
+      // "Get advise": voor de huidige setup, of een plan (Long bij range low / Short bij range high).
+      actions.innerHTML = `
+        <div class="menu-wrap">
+          <button class="btn primary" id="d-advise" aria-haspopup="true">Get advise ▾</button>
+          <div class="menu" id="d-menu" hidden>
+            ${signal ? `<button data-adv="current">Huidige setup: ${esc(signal.direction)} <span class="muted">(${esc(signal.status === "trigger" ? "trigger" : signal.status === "reclaim" ? "reclaim" : signal.status)})</span></button>` : ""}
+            <button data-adv="Long">Plan: Long bij de range low</button>
+            <button data-adv="Short">Plan: Short bij de range high</button>
+          </div>
+        </div>
+        ${signal ? `<a class="btn" href="#/trades/new?${tradeQ(signal)}">Trade plaatsen</a>` : ""}`;
+      const menu = actions.querySelector("#d-menu");
+      const btn = actions.querySelector("#d-advise");
+      btn.addEventListener("click", (e) => {
+        e.stopPropagation();
+        menu.hidden = !menu.hidden;
       });
-      actions.innerHTML = `<button class="btn primary" id="d-advise">Get advise</button><a class="btn" href="#/trades/new?${q}">Trade plaatsen</a>`;
-      actions.querySelector("#d-advise").addEventListener("click", async (e) => {
-        e.target.disabled = true;
-        e.target.textContent = "Advies maken…";
-        const base = sig || { symbol: sym, tf: frame, ...signal, range, id: null };
-        try {
-          const item = await TD.advise.fromSignal(base);
-          location.hash = "#/advise/" + encodeURIComponent(item.id);
-        } catch (err) {
-          e.target.disabled = false;
-          e.target.textContent = "Get advise";
-          alert("Advies maken mislukt: " + err.message);
-        }
-      });
+      document.addEventListener("click", () => (menu.hidden = true), { once: true });
+      menu.querySelectorAll("[data-adv]").forEach((b) =>
+        b.addEventListener("click", () => {
+          menu.hidden = true;
+          const kind = b.dataset.adv;
+          if (kind === "current") return makeAdvice(btn, sig || { symbol: sym, tf: frame, ...signal, range, id: null });
+          const plan = E.planSetup(range, kind);
+          makeAdvice(btn, { symbol: sym, tf: frame, ...plan, range, id: null });
+        })
+      );
+
+      // Historische setups in deze data, met wat er daarna gebeurde.
+      const hist = E.findHistory(res.candles);
+      const box = root.querySelector("#d-history");
+      const outTxt = { sl: '<span class="badge neg">SL geraakt</span>', tp1: '<span class="badge pos">TP1 + BE</span>', tp2: '<span class="badge pos">TP2 geraakt</span>', open: '<span class="badge muted">Nog open</span>' };
+      box.innerHTML = `<h2>Historische setups <span class="muted small">— zoals de Notifier ze destijds had gezien</span></h2>
+        ${
+          hist.length
+            ? `<table class="table"><thead><tr><th>Moment</th><th>Richting</th><th>Status toen</th><th class="num">Entry</th><th class="num">SL</th><th class="num">TP1</th><th class="num">R:R</th><th>Daarna</th><th></th></tr></thead><tbody>
+              ${hist
+                .map(
+                  (h, i) => `<tr>
+                  <td>${date(h.atTime * 1000, true)}</td>
+                  <td><span class="dir ${h.signal.direction === "Long" ? "pos" : "neg"}">${esc(h.signal.direction)}</span></td>
+                  <td>${statusBadge(h.signal.status)}</td>
+                  <td class="num">${num(h.signal.entry, 6)}</td><td class="num">${num(h.signal.stopLoss, 6)}</td><td class="num">${num(h.signal.tp1, 6)}</td>
+                  <td class="num">${h.signal.rr1.toFixed(1)}</td>
+                  <td>${outTxt[h.outcome.result]}</td>
+                  <td><button class="btn small" data-hist="${i}">Get advise</button></td></tr>`
+                )
+                .join("")}</tbody></table>
+              <p class="muted small">${hist.filter((h) => h.outcome.result === "tp1" || h.outcome.result === "tp2").length} van ${hist.filter((h) => h.outcome.result !== "open").length} afgeronde setups haalden TP1 vóór de stop. Het advies van een historische setup kijkt alleen naar de candles van vóór dat moment.</p>`
+            : `<p class="muted">In de geladen periode (laatste 300 candles) zijn geen deviatie + reclaim-setups gevonden.</p>`
+        }`;
+      box.querySelectorAll("[data-hist]").forEach((b) =>
+        b.addEventListener("click", () => {
+          const h = hist[+b.dataset.hist];
+          makeAdvice(b, { symbol: sym, tf: frame, ...h.signal, range: h.range, id: null }, { asOf: h.atTime });
+        })
+      );
     }
     actions.insertAdjacentHTML("beforeend", `<a class="btn" href="#/markt/${encodeURIComponent(sym)}">Open in Markt</a>`);
   }

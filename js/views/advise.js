@@ -15,6 +15,14 @@
   const title = (a) => `${shortSym(a.symbol)} – ${a.direction} – ${tfLabel(a.tf)}`;
   const verdictBadge = (v) => `<span class="badge verdict ${v.key}">${esc(v.label)}</span>`;
   const MARK = { pass: "✓", warn: "!", fail: "✗", info: "i" };
+  const kindTag = (a) =>
+    a.kind === "history" ? '<span class="badge muted">Historisch</span>' : a.kind === "plan" ? '<span class="badge open">Plan</span>' : '<span class="badge pos">Live</span>';
+  function subtitle(a) {
+    const g = a.signal;
+    if (a.kind === "history") return `Historische setup van ${date(a.asOf * 1000, true)}, beoordeeld met de data van toen`;
+    if (a.kind === "plan") return `Plan van ${date(a.createdAt, true)}: entry bij de ${g.direction === "Long" ? "range low" : "range high"}, wacht op deviatie + reclaim + retest`;
+    return `Advies van ${date(a.createdAt, true)} · trigger: ${g.status === "trigger" ? "retest" : g.status === "reclaim" ? "reclaim (wacht op retest)" : g.status}`;
+  }
 
   // ---------------- lijst ----------------
   function renderList(root) {
@@ -31,7 +39,7 @@
               .map(
                 (a) => `<a class="advice-card ${a.verdict.key}" href="#/advise/${encodeURIComponent(a.id)}">
                   <div class="row gap between"><strong>${esc(title(a))}</strong>${verdictBadge(a.verdict)}</div>
-                  <div class="muted small">${date(a.createdAt, true)} · ${a.checks.filter((c) => c.state === "pass").length}/${a.checks.filter((c) => c.state !== "info").length} principes in orde</div>
+                  <div class="muted small">${kindTag(a)} ${date(a.asOf ? a.asOf * 1000 : a.createdAt, true)} · ${a.checks.filter((c) => c.state === "pass").length}/${a.checks.filter((c) => c.state !== "info").length} principes in orde</div>
                   <dl class="mini">
                     <dt>Entry</dt><dd>${num(a.signal.entry, 6)}</dd>
                     <dt>SL</dt><dd>${num(a.signal.stopLoss, 6)}</dd>
@@ -114,8 +122,8 @@
       <div class="page-head">
         <div>
           <a class="back" href="#/advise">← Advise</a>
-          <h1>${esc(title(a))} ${verdictBadge(a.verdict)}</h1>
-          <div class="muted small">Advies van ${date(a.createdAt, true)} · trigger: ${g.status === "trigger" ? "retest" : g.status === "reclaim" ? "reclaim (wacht op retest)" : esc(g.status)}</div>
+          <h1>${esc(title(a))} ${verdictBadge(a.verdict)} ${kindTag(a)}</h1>
+          <div class="muted small">${esc(subtitle(a))}</div>
         </div>
         <div class="row gap">
           <a class="btn primary" id="adv-trade" href="#">Trade plaatsen</a>
@@ -244,11 +252,12 @@
       cleanup = res.cleanup;
       const pr = A.progress(res.candles, a);
       current = pr.price;
+      const since = a.kind === "history" ? "na deze setup" : "sinds dit advies";
       const hitTxt = {
-        sl: '<span class="neg">De stop loss is sinds dit advies geraakt.</span>',
-        tp1: '<span class="pos">TP1 (mid) is sinds dit advies geraakt.</span>',
-        tp2: '<span class="pos">TP2 is sinds dit advies geraakt.</span>',
-      }[pr.hit] || "Nog geen SL of TP geraakt sinds dit advies.";
+        sl: `<span class="neg">${a.kind === "history" ? "Achteraf: de stop loss werd" : "De stop loss is"} ${since} geraakt.</span>`,
+        tp1: `<span class="pos">${a.kind === "history" ? "Achteraf: TP1 (mid) werd" : "TP1 (mid) is"} ${since} geraakt.</span>`,
+        tp2: `<span class="pos">${a.kind === "history" ? "Achteraf: TP2 werd" : "TP2 is"} ${since} geraakt.</span>`,
+      }[pr.hit] || `Nog geen SL of TP geraakt ${since}.`;
       root.querySelector("#adv-live").innerHTML = `Koers nu <strong>${num(pr.price, 6)}</strong> (${pr.fromEntry >= 0 ? "+" : ""}${pct(pr.fromEntry, 2)} t.o.v. entry) · ${hitTxt}`;
       paintCalc();
     } catch (e) {

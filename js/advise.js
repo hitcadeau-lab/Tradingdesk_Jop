@@ -93,15 +93,19 @@
     add(
       "trigger",
       "Trigger",
-      signal.status === "trigger" ? "pass" : signal.status === "reclaim" ? "warn" : "fail",
-      signal.status === "trigger"
+      signal.status === "trigger" ? "pass" : signal.status === "reclaim" || signal.status === "planned" ? "warn" : "fail",
+      signal.status === "planned"
+        ? "Nog geen trigger: dit is een plan. Wacht tot een candle buiten de range sluit (deviatie), terug binnen sluit (reclaim) en de retest houdt."
+        : signal.status === "trigger"
         ? "Deviatie, reclaim én retest: het level is geflipt. Dit is het moment waarop je de trekker overhaalt."
         : signal.status === "reclaim"
         ? "Er is een reclaim, maar nog geen retest. Wacht op de retest (limit order op het level) in plaats van in te springen."
         : "Geen geldige trigger meer (verlopen of vervallen)."
     );
     const d = signal.depth ?? 0;
-    add(
+    if (signal.depth == null) {
+      add("deviation", "Deviatie", "info", "Nog geen deviatie. De stop is gebaseerd op een verwachte deviatie van ±15% van de range. Pas je stop aan zodra de echte deviatie er is: altijd voorbij de wick.");
+    } else add(
       "deviation",
       "Deviatie",
       d <= 0.2 ? "pass" : d <= 0.35 ? "warn" : "fail",
@@ -163,6 +167,8 @@
         ? { key: "skip", label: "Niet spelen", text: "Een of meer principes zijn niet in orde. Sla deze setup over of wacht op een nieuwe." }
         : warns >= 2
         ? { key: "doubt", label: "Twijfel", text: "Speelbaar, maar met kanttekeningen. Wacht op een betere entry, of speel kleiner." }
+        : signal.status === "planned"
+        ? { key: "plan", label: "Klaarzetten", text: "Een plan voor de toekomst: zet een alert of limit order bij de rand, en speel hem alleen na deviatie, reclaim en retest." }
         : { key: "play", label: "Speelbaar", text: "De setup voldoet aan de range-principes. Loop nog wel je Trade Entry Checklist door (emotie, nieuws, risico)." };
     return { checks, verdict };
   }
@@ -200,7 +206,8 @@
   function progress(candles, item) {
     const g = item.signal;
     const long = g.direction === "Long";
-    const since = candles.filter((c) => c.time * 1000 > item.createdAt);
+    const ref = item.asOf ? item.asOf * 1000 : item.createdAt;
+    const since = candles.filter((c) => c.time * 1000 > ref);
     const last = candles[candles.length - 1];
     let hit = null;
     for (const c of since) {
@@ -215,8 +222,10 @@
   }
 
   // Maak een advies van een Notifier-melding (haalt verse candles op voor de beoordeling).
-  async function fromSignal(sig) {
-    const candles = await TD.marketData.candles(sig.symbol, sig.tf, 300);
+  // opts.asOf (sec): historische setup — beoordeel alleen met de candles tot dat moment.
+  async function fromSignal(sig, opts = {}) {
+    const all = opts.candles || (await TD.marketData.candles(sig.symbol, sig.tf, 300));
+    const candles = opts.asOf ? all.filter((c) => c.time <= opts.asOf) : all;
     const signal = {
       direction: sig.direction, status: sig.status, reason: sig.reason, entry: sig.entry, stopLoss: sig.stopLoss,
       tp1: sig.tp1, tp2: sig.tp2, rr1: sig.rr1, rr2: sig.rr2, depth: sig.depth,
@@ -229,6 +238,8 @@
       id: "a" + Date.now().toString(36),
       fromSignal: sig.id,
       createdAt: Date.now(),
+      asOf: opts.asOf || null, // historisch: moment van de setup
+      kind: opts.asOf ? "history" : sig.status === "planned" ? "plan" : "live",
       symbol: sig.symbol,
       tf: sig.tf,
       direction: sig.direction,

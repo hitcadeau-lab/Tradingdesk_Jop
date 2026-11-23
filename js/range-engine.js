@@ -217,7 +217,75 @@
     return { range, signal: range ? findSignal(c, range, opts) : null };
   }
 
-  const api = { DEFAULTS, atr, pivots, findRanges, findRange, findSignal, analyze };
+  // Wat gebeurde er na een setup? Eerst SL, of eerst TP1 (en daarna TP2)?
+  function outcome(c, sig, fromIndex) {
+    const long = sig.direction === "Long";
+    let res = "open";
+    for (let i = fromIndex + 1; i < c.length; i++) {
+      const slHit = long ? c[i].low <= sig.stopLoss : c[i].high >= sig.stopLoss;
+      const t1 = long ? c[i].high >= sig.tp1 : c[i].low <= sig.tp1;
+      const t2 = long ? c[i].high >= sig.tp2 : c[i].low <= sig.tp2;
+      if (res === "open") {
+        if (slHit) return { result: "sl", time: c[i].time };
+        if (t2) return { result: "tp2", time: c[i].time };
+        if (t1) res = "tp1";
+      } else if (res === "tp1") {
+        // Na TP1 staat de stop op break-even (TP1 + BE) of loopt hij door naar TP2.
+        if (long ? c[i].low <= sig.entry : c[i].high >= sig.entry) return { result: "tp1", time: c[i].time };
+        if (t2) return { result: "tp2", time: c[i].time };
+      }
+    }
+    return { result: res, time: null };
+  }
+
+  // Alle setups uit de geschiedenis: loop candle voor candle door de data, zoals de
+  // Notifier het destijds live gezien zou hebben (geen kennis van de toekomst).
+  function findHistory(c, opts = {}) {
+    const start = Math.max(60, opts.from || 60);
+    const byKey = new Map();
+    for (let t = start; t < c.length; t++) {
+      const w = c.slice(0, t + 1);
+      const { range, signal } = analyze(w, opts);
+      if (!range || !signal) continue;
+      const key = `${signal.direction}|${signal.reclaimTime}`;
+      const prev = byKey.get(key);
+      // Bewaar de toestand op het beslissende moment: de eerste trigger, anders de reclaim.
+      if (!prev || (prev.signal.status !== "trigger" && signal.status === "trigger")) {
+        byKey.set(key, { range, signal: { ...signal }, atIndex: t, atTime: c[t].time });
+      }
+    }
+    return [...byKey.values()]
+      .map((h) => ({ ...h, outcome: outcome(c, h.signal, h.atIndex) }))
+      .sort((a, b) => b.atTime - a.atTime);
+  }
+
+  // Een plan voor de toekomst: nog geen deviatie, wel een range. Entry op de rand,
+  // stop voorbij een verwachte deviatie (15% van de range), TP1 = mid, TP2 = andere kant.
+  function planSetup(range, direction, buffer = 0.15) {
+    const long = direction === "Long";
+    const h = range.high - range.low;
+    const entry = long ? range.low : range.high;
+    const stopLoss = long ? range.low - (buffer + 0.03) * h : range.high + (buffer + 0.03) * h;
+    const tp1 = range.mid;
+    const tp2 = long ? range.high : range.low;
+    return {
+      direction,
+      status: "planned",
+      reason: "",
+      entry,
+      stopLoss,
+      tp1,
+      tp2,
+      rr1: Math.abs(tp1 - entry) / Math.abs(entry - stopLoss),
+      rr2: Math.abs(tp2 - entry) / Math.abs(entry - stopLoss),
+      depth: null,
+      deviationTime: null,
+      reclaimTime: null,
+      retestTime: null,
+    };
+  }
+
+  const api = { DEFAULTS, atr, pivots, findRanges, findRange, findSignal, analyze, outcome, findHistory, planSetup };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) {
     root.TD = root.TD || {};
