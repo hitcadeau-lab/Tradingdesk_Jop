@@ -1,9 +1,8 @@
-# Bouwt de Mac-app en publiceert een GitHub Release zodra er op main een
-# nieuwe versie (desktop/package.json) staat. Dus pas nadat je de pull request
-# hebt goedgekeurd en samengevoegd. De release bevat:
-#  - Tradingdesk-<versie>-mac.dmg / .zip  (installatie, universal: Apple Silicon + Intel)
-#  - web-<versie>.zip                      (app-inhoud voor updates met één klik)
-#  - latest.json                           (wat de app leest om updates te vinden)
+# Publiceert een GitHub Release zodra er op main een nieuwe versie (desktop/package.json) staat.
+# Twee delen, zodat een update niet blijft hangen als GitHub even geen Mac-machine heeft:
+#  1. web (Linux):  web-<versie>.zip + latest.json → de Mac-app meldt meteen "Installeer update"
+#  2. mac (macOS):  Tradingdesk-<versie>-mac.dmg / .zip worden achteraf aan dezelfde release toegevoegd
+# latest.json gebruikt tradingdesk.webMinShell: de oudste app-schil die deze app-inhoud kan draaien.
 name: Release Mac-app
 
 on:
@@ -20,8 +19,10 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
-    runs-on: macos-15
+  web:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
     defaults:
       run:
         working-directory: desktop
@@ -42,54 +43,93 @@ jobs:
           V=$(node -p "require('./package.json').version")
           echo "version=$V" >> "$GITHUB_OUTPUT"
           if gh release view "v$V" --repo "$GITHUB_REPOSITORY" >/dev/null 2>&1; then
-            echo "Release v$V bestaat al: niets te doen (verhoog de versie voor een nieuwe release)."
+            echo "Release v$V bestaat al: app-inhoud niet opnieuw publiceren."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Installeren en testen
         if: steps.ver.outputs.skip != 'true'
         run: |
-          npm ci
+          npm ci --ignore-scripts
           npm test
-
-      - name: Mac-app bouwen
-        if: steps.ver.outputs.skip != 'true'
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: "false"
-        run: npm run dist
 
       - name: Web-bundel en latest.json maken
         if: steps.ver.outputs.skip != 'true'
         run: |
+          npm run copy-web
+          mkdir -p dist
           V=${{ steps.ver.outputs.version }}
           (cd web && zip -qr "../dist/web-$V.zip" .)
-          NOTES=$(git log -1 --pretty=%s)
           node -e '
             const p = require("./package.json");
+            const t = p.tradingdesk;
             const v = p.version;
             require("fs").writeFileSync("dist/latest.json", JSON.stringify({
               version: v,
-              minShell: p.tradingdesk.shellVersion,
+              minShell: t.webMinShell || t.shellVersion,
+              shell: t.shellVersion,
               web: `web-${v}.zip`,
               dmg: `Tradingdesk-${v}-mac.dmg`,
-              notes: process.argv[1].slice(0, 140)
+              notes: (t.releaseNotes || "").slice(0, 140)
             }, null, 2));
-          ' "$NOTES"
-          ls -la dist
+          '
+          cat dist/latest.json
 
-      - name: Release publiceren
+      - name: Release publiceren (app-inhoud)
         if: steps.ver.outputs.skip != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           V=${{ steps.ver.outputs.version }}
-          gh release create "v$V" \
-            "dist/Tradingdesk-$V-mac.dmg" \
-            "dist/Tradingdesk-$V-mac.zip" \
-            "dist/web-$V.zip" \
-            "dist/latest.json" \
+          NOTES=$(node -p "require('./package.json').tradingdesk.releaseNotes || ''")
+          gh release create "v$V" "dist/web-$V.zip" "dist/latest.json" \
             --repo "$GITHUB_REPOSITORY" \
             --target "$GITHUB_SHA" \
             --title "Tradingdesk $V" \
-            --notes "$(git log -1 --pretty=%B)" \
+            --notes "$NOTES
+
+          De .dmg (installatie) wordt toegevoegd zodra de Mac-build klaar is." \
             --latest
+
+  mac:
+    needs: web
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: desktop
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Bestaat de .dmg al?
+        id: have
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${{ needs.web.outputs.version }}
+          if gh release view "v$V" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -q "Tradingdesk-$V-mac.dmg"; then
+            echo "De .dmg voor v$V staat er al."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/setup-node@v4
+        if: steps.have.outputs.skip != 'true'
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: desktop/package-lock.json
+
+      - name: Mac-app bouwen
+        if: steps.have.outputs.skip != 'true'
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: "false"
+        run: |
+          npm ci
+          npm run dist
+
+      - name: .dmg toevoegen aan de release
+        if: steps.have.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          V=${{ needs.web.outputs.version }}
+          gh release upload "v$V" "dist/Tradingdesk-$V-mac.dmg" "dist/Tradingdesk-$V-mac.zip" --repo "$GITHUB_REPOSITORY" --clobber

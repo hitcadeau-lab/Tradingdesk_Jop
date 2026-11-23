@@ -59,7 +59,7 @@
         const noData = src && src.type === "yahoo" && !M.stocksAvailable();
         return `<tr>
           <td><strong>${esc(shortSym(sym))}</strong> <span class="muted small">${esc(sym)}</span></td>
-          <td class="muted small">${src ? esc(src.label) : "—"}${noData ? ' · <span class="warn-text">alleen in de Mac-app</span>' : ""}</td>
+          <td class="muted small">${src ? esc(src.label) : "—"}${noData ? ` · <span class="warn-text">${S.desktop ? "nieuwste .dmg nodig" : "alleen in de Mac-app"}</span>` : ""}</td>
           ${TFS.map((tf) => `<td class="center"><input type="checkbox" data-pair="${esc(sym)}" data-tf="${tf}" ${p && p.tfs.includes(tf) ? "checked" : ""} aria-label="${esc(sym)} ${M.TF[tf].label}"></td>`).join("")}
         </tr>`;
       })

@@ -10,7 +10,9 @@
   "repository": "github:hitcadeau-lab/Tradingdesk_Jop",
   "tradingdesk": {
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
-    "shellVersion": 3
+    "shellVersion": 3,
+    "webMinShell": 2,
+    "releaseNotes": "Notifier (range-setups met meldingen), Advise (beoordeling + calculator), historische setups en range-weergave in Markt."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",

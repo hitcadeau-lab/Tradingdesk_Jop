@@ -45,7 +45,8 @@
   }
 
   async function yahoo(id, tf, limit) {
-    if (!stocksAvailable()) throw new Error("Aandelen-data werkt alleen in de Mac-app.");
+    if (!stocksAvailable())
+      throw new Error(window.tdDesktop ? "Voor aandelen-data heb je de nieuwste app-versie nodig: installeer de nieuwste .dmg." : "Aandelen-data werkt alleen in de Mac-app.");
     const conf = TF[tf];
     const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(id)}?interval=${conf.yahoo}&range=${conf.yahooRange}`;
     const data = await window.tdDesktop.fetchJSON(url);
