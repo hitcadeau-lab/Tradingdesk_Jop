@@ -1,0 +1,221 @@
+// Portfolio: Performance Dashboard + Equity Curve + Breakdown by Pair + Journal
+// (zelfde opbouw als het TradingWizard Journal in Excel). Elke trade is klikbaar.
+(function (TD) {
+  const { esc, money, pct, num, r, date, shortSym, signClass, download } = TD.util;
+  const S = TD.store;
+
+  function render(root) {
+    const p = S.computePortfolio();
+    const trades = S.getTrades();
+    const journal = trades
+      .slice()
+      .sort((a, b) => (a.exitDate || a.entryDate || "").localeCompare(b.exitDate || b.entryDate || ""));
+    const kpi = (label, value, cls = "", sub = "") =>
+      `<div class="kpi"><span>${label}</span><strong class="${cls}">${value}</strong>${sub ? `<em>${sub}</em>` : ""}</div>`;
+
+    root.innerHTML = `
+      <div class="page-head">
+        <h1>Portfolio</h1>
+        <div class="row gap">
+          <button class="btn" id="exp-csv">Exporteer naar Excel (CSV)</button>
+          <button class="btn" id="exp-json">Back-up maken</button>
+          <label class="btn">Back-up terugzetten<input type="file" id="imp-json" accept="application/json,.json" hidden></label>
+        </div>
+      </div>
+
+      <section class="panel settings-row">
+        <label class="inline">Startkapitaal
+          <input type="number" id="start-cap" step="any" min="0" value="${esc(p.startingCapital)}">
+        </label>
+        <label class="inline">Valuta
+          <select id="currency">${["$", "€", "USDT "].map((c) => `<option ${c === p.settings.currency ? "selected" : ""}>${c}</option>`).join("")}</select>
+        </label>
+        <span class="muted small">Alles hieronder wordt automatisch berekend uit je trades.</span>
+      </section>
+
+      <div class="kpis">
+        ${kpi("Startkapitaal", money(p.startingCapital))}
+        ${kpi("Huidig saldo", money(p.balance), signClass(p.netPnl))}
+        ${kpi("Net PnL", money(p.netPnl), signClass(p.netPnl))}
+        ${kpi("Totaal rendement", pct(p.totalReturn, 2), signClass(p.totalReturn))}
+        ${kpi("Trades genomen", p.taken, "", `${p.open.length} open`)}
+        ${kpi("Wins / Losses", `${p.wins} / ${p.losses}`)}
+        ${kpi("Win rate", pct(p.winRate))}
+        ${kpi("Expectancy", r(p.expectancy), signClass(p.expectancy), "gem. R per trade")}
+        ${kpi("Profit factor", num(p.profitFactor))}
+        ${kpi("Gem. winst", money(p.avgWin), "pos")}
+        ${kpi("Gem. verlies", money(p.avgLoss), "neg")}
+        ${kpi("Max drawdown", pct(p.maxDrawdown, 2), p.maxDrawdown < 0 ? "neg" : "")}
+        ${kpi("Beste trade", money(p.best), signClass(p.best))}
+        ${kpi("Slechtste trade", money(p.worst), signClass(p.worst))}
+        ${kpi("Plan adherence", pct(p.planAdherence), "", "“Followed plan?” = Yes")}
+        ${kpi("Open risico", money(p.openRisk), "", "som van risico open trades")}
+      </div>
+
+      <section class="panel">
+        <h2>Equity curve <span class="muted small">— klik op een punt om de trade te openen</span></h2>
+        ${TD.charts.equitySVG(p.curve, p.startingCapital)}
+      </section>
+
+      <div class="two-col">
+        <section class="panel">
+          <h2>Open posities</h2>
+          ${
+            p.open.length
+              ? `<table class="table clickable"><thead><tr><th>Ticker</th><th>Richting</th><th>Entry</th><th>SL</th><th class="num">R/R</th><th class="num">Risico</th></tr></thead><tbody>
+              ${p.open
+                .map(
+                  (t) => `<tr data-href="#/trades/${t.id}"><td><strong>${esc(shortSym(t.ticker))}</strong></td>
+                  <td><span class="dir ${t.direction === "Long" ? "pos" : "neg"}">${esc(t.direction)}</span></td>
+                  <td>${num(t.entry, 8)}</td><td>${num(t.stopLoss, 8)}</td><td class="num">${r(S.totalRR(t))}</td>
+                  <td class="num">${money(S.riskAmount(t, p))}</td></tr>`
+                )
+                .join("")}</tbody></table>`
+              : `<p class="muted">Geen open posities.</p>`
+          }
+        </section>
+        <section class="panel">
+          <h2>Breakdown per pair</h2>
+          ${
+            p.byPair.length
+              ? `<table class="table clickable"><thead><tr><th>Pair</th><th class="num">Trades</th><th class="num">Wins</th><th class="num">Losses</th><th class="num">Win rate</th><th class="num">Net PnL</th></tr></thead><tbody>
+              ${p.byPair
+                .map(
+                  (b) => `<tr data-href="#/trades?ticker=${encodeURIComponent(b.ticker)}"><td><strong>${esc(shortSym(b.ticker))}</strong></td>
+                  <td class="num">${b.trades}</td><td class="num">${b.wins}</td><td class="num">${b.losses}</td>
+                  <td class="num">${b.wins + b.losses ? pct(b.wins / (b.wins + b.losses)) : "—"}</td>
+                  <td class="num ${signClass(b.pnl)}">${money(b.pnl)}</td></tr>`
+                )
+                .join("")}</tbody></table>`
+              : `<p class="muted">Nog geen gesloten trades.</p>`
+          }
+        </section>
+      </div>
+
+      <section class="panel">
+        <h2>Journal</h2>
+        ${
+          journal.length
+            ? `<div class="table-wrap"><table class="table clickable"><thead><tr>
+            <th>#</th><th>Datum</th><th>Pair</th><th>Richting</th><th>Setup</th><th>Uitkomst</th><th>Plan?</th>
+            <th class="num">Risk %</th><th class="num">Start</th><th class="num">PnL</th><th class="num">Eind</th>
+            <th class="num">Return</th><th class="num">R</th><th>Checks</th><th>Les</th></tr></thead><tbody>
+            ${journal
+              .map((t, i) => {
+                const row = p.rows.get(t.id);
+                return `<tr data-href="#/trades/${t.id}">
+                  <td>${i + 1}</td><td>${date(t.exitDate || t.entryDate)}</td><td><strong>${esc(shortSym(t.ticker))}</strong></td>
+                  <td>${esc(t.direction)}</td><td>${esc(t.setup)}</td><td>${TD.views.trades.statusBadge(t)}</td>
+                  <td>${esc(t.followedPlan || "—")}</td><td class="num">${num(t.riskPct)}%</td>
+                  <td class="num">${row ? money(row.startBalance) : "—"}</td>
+                  <td class="num ${signClass(+t.pnl)}">${t.status === "closed" ? money(+t.pnl) : "—"}</td>
+                  <td class="num">${row ? money(row.endBalance) : "—"}</td>
+                  <td class="num ${signClass(row?.returnPct)}">${row ? pct(row.returnPct, 2) : "—"}</td>
+                  <td class="num ${signClass(row?.r)}">${row ? r(row.r) : "—"}</td>
+                  <td>${TD.views.trades.scoreBadge(t)}</td>
+                  <td class="lesson-cell">${esc(t.lesson || "")}</td></tr>`;
+              })
+              .join("")}</tbody></table></div>`
+            : `<div class="empty">Nog geen trades. <a href="#/trades/new">Plaats je eerste trade</a>.</div>`
+        }
+      </section>
+
+      ${projection(p)}`;
+
+    root.querySelector("#start-cap").addEventListener("change", (e) => {
+      S.setSettings({ startingCapital: +e.target.value || 0 });
+      TD.app.rerender();
+    });
+    root.querySelector("#currency").addEventListener("change", (e) => {
+      S.setSettings({ currency: e.target.value });
+      TD.app.rerender();
+    });
+    root.querySelector("#exp-csv").addEventListener("click", () =>
+      download(`tradingdesk-journal-${new Date().toISOString().slice(0, 10)}.csv`, "﻿" + S.exportCSV(), "text/csv")
+    );
+    root.querySelector("#exp-json").addEventListener("click", () =>
+      download(`tradingdesk-backup-${new Date().toISOString().slice(0, 10)}.json`, S.exportJSON(), "application/json")
+    );
+    root.querySelector("#imp-json").addEventListener("change", async (e) => {
+      const f = e.target.files[0];
+      if (!f) return;
+      if (!confirm("Dit vervangt al je huidige trades door die uit de back-up. Doorgaan?")) return;
+      try {
+        const n = S.importJSON(await f.text());
+        alert(`${n} trades teruggezet.`);
+        TD.app.rerender();
+      } catch (err) {
+        alert("Terugzetten mislukt: " + err.message);
+      }
+    });
+
+    const pf = root.querySelector("#proj-form");
+    pf.addEventListener("input", () => {
+      root.querySelector("#proj-out").innerHTML = projectionTable(readProj(pf));
+    });
+  }
+
+  // ---------- Compound Projection (tabblad uit de Excel) ----------
+  function readProj(f) {
+    return {
+      start: +f.pstart.value || 0,
+      risk: (+f.prisk.value || 0) / 100,
+      win: +f.pwin.value || 0,
+      winrate: Math.min(100, Math.max(0, +f.pwr.value || 0)) / 100,
+      n: Math.min(500, Math.max(1, +f.pn.value || 1)),
+      target: +f.ptarget.value || 0,
+    };
+  }
+
+  function projectionTable(o) {
+    // Verdeel wins en losses gelijkmatig over de reeks (bijv. 50% → W L W L ...).
+    let bal = o.start;
+    let reached = null;
+    let acc = 0;
+    const rows = [];
+    for (let i = 1; i <= o.n; i++) {
+      acc += o.winrate;
+      const win = acc >= 1 - 1e-9;
+      if (win) acc -= 1;
+      const risk = bal * o.risk;
+      const pnl = win ? risk * o.win : -risk;
+      bal += pnl;
+      if (reached === null && o.target && bal >= o.target) reached = i;
+      rows.push({ i, win, pnl, bal });
+    }
+    const show = rows.length > 12 ? [...rows.slice(0, 6), null, ...rows.slice(-5)] : rows;
+    return `
+      <div class="kpis small">
+        <div class="kpi"><span>Eindsaldo</span><strong class="${signClass(bal - o.start)}">${money(bal)}</strong></div>
+        <div class="kpi"><span>Rendement</span><strong class="${signClass(bal - o.start)}">${pct(o.start ? bal / o.start - 1 : 0)}</strong></div>
+        <div class="kpi"><span>Target bereikt</span><strong>${reached ? "na trade " + reached : "niet binnen " + o.n}</strong></div>
+      </div>
+      <table class="table"><thead><tr><th>#</th><th>Uitkomst</th><th class="num">PnL</th><th class="num">Saldo</th></tr></thead><tbody>
+      ${show
+        .map((x) =>
+          x
+            ? `<tr><td>${x.i}</td><td>${x.win ? '<span class="badge pos">Win</span>' : '<span class="badge neg">Loss</span>'}</td><td class="num ${signClass(x.pnl)}">${money(x.pnl)}</td><td class="num">${money(x.bal)}</td></tr>`
+            : `<tr><td colspan="4" class="muted">…</td></tr>`
+        )
+        .join("")}</tbody></table>`;
+  }
+
+  function projection(p) {
+    const o = { start: Math.round(p.balance * 100) / 100, risk: 0.02, win: 3, winrate: 0.5, n: 50, target: 100000 };
+    return `<section class="panel">
+      <h2>Compound projection <span class="muted small">— vooruitblik, geen voorspelling</span></h2>
+      <form id="proj-form" class="grid g6" onsubmit="return false">
+        <label>Startsaldo<input name="pstart" type="number" step="any" value="${o.start}"></label>
+        <label>Risico % per trade<input name="prisk" type="number" step="0.1" value="${o.risk * 100}"></label>
+        <label>Winst per win (R)<input name="pwin" type="number" step="0.1" value="${o.win}"></label>
+        <label>Win rate %<input name="pwr" type="number" step="1" value="${o.winrate * 100}"></label>
+        <label>Aantal trades<input name="pn" type="number" step="1" value="${o.n}"></label>
+        <label>Target saldo<input name="ptarget" type="number" step="any" value="${o.target}"></label>
+      </form>
+      <div id="proj-out">${projectionTable(o)}</div>
+    </section>`;
+  }
+
+  TD.views = TD.views || {};
+  TD.views.portfolio = { render };
+})(window.TD);
