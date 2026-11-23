@@ -165,7 +165,7 @@
         try {
           const candles = await TD.marketData.candles(p.symbol, tf, 300);
           const { range, signal } = TD.rangeEngine.analyze(candles);
-          results.set(key, { range, signal, error: null, at: now, last: candles[candles.length - 1].close });
+          results.set(key, { range, signal, error: null, at: now, last: candles[candles.length - 1].close, lastTime: candles[candles.length - 1].time });
           if (range && signal) {
             const sig = upsert(list, p.symbol, tf, range, signal, now);
             if (sig) toNotify.push(sig);

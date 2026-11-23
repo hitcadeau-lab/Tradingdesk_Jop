@@ -1,7 +1,7 @@
 // Notifier: meldingen van range-trading setups, de pairs en timeframes die je volgt,
 // het scan-overzicht en per melding de range in de grafiek.
 (function (TD) {
-  const { esc, num, shortSym, date } = TD.util;
+  const { esc, num, price, stamp, shortSym, date } = TD.util;
   const S = TD.store;
   const N = TD.notifier;
   const M = TD.marketData;
@@ -46,7 +46,7 @@
             <td>${date(s.detectedAt, true)}</td>
             <td><strong>${esc(N.title(s))}</strong></td>
             <td>${statusBadge(s.status)}</td>
-            <td class="num">${num(s.entry, 6)}</td><td class="num">${num(s.stopLoss, 6)}</td><td class="num">${num(s.tp1, 6)}</td>
+            <td class="num">${price(s.entry)}</td><td class="num">${price(s.stopLoss)}</td><td class="num">${price(s.tp1)}</td>
             <td class="num">${s.rr1.toFixed(1)}</td></tr>`
           )
           .join("")}</tbody></table>`
@@ -69,13 +69,20 @@
       .flatMap((p) => p.tfs.map((tf) => ({ p, tf, r: N.results().get(`${p.symbol}|${tf}`) })))
       .map(({ p, tf, r }) => {
         let txt = '<span class="muted">Nog niet gescand</span>';
+        let since = "—", setupAt = "—";
         if (r && r.error) txt = `<span class="neg">${esc(r.error)}</span>`;
         else if (r && !r.range) txt = '<span class="muted">Geen geldige range (trend of uitbraak)</span>';
         else if (r && r.range) {
           const d = r.range.distribution;
-          txt = `Range ${num(r.range.low, 6)} – ${num(r.range.high, 6)} · mid ${num(r.range.mid, 6)} · verdeling ${Math.round(d.lower * 100)}/${Math.round(d.upper * 100)} · ${r.signal ? statusBadge(r.signal.status) : '<span class="muted">geen setup</span>'}`;
+          txt = `Range ${price(r.range.low)} – ${price(r.range.high)} · mid ${price(r.range.mid)} · verdeling ${Math.round(d.lower * 100)}/${Math.round(d.upper * 100)} · ${r.signal ? statusBadge(r.signal.status) : '<span class="muted">geen setup</span>'}`;
+          since = stamp(r.range.startTime * 1000);
+          if (r.signal) {
+            const g = r.signal;
+            setupAt = g.retestTime ? `Retest ${stamp(g.retestTime * 1000)}` : `Reclaim ${stamp(g.reclaimTime * 1000)}`;
+          }
         }
-        return `<tr data-href="#/notifier/range?symbol=${encodeURIComponent(p.symbol)}&tf=${tf}"><td><strong>${esc(shortSym(p.symbol))}</strong></td><td>${M.TF[tf].label}</td><td class="wrap">${txt}</td></tr>`;
+        return `<tr data-href="#/notifier/range?symbol=${encodeURIComponent(p.symbol)}&tf=${tf}"><td><strong>${esc(shortSym(p.symbol))}</strong></td><td>${M.TF[tf].label}</td><td class="wrap">${txt}</td>
+          <td class="ts">${since}</td><td class="ts">${setupAt}</td><td class="ts">${r && r.lastTime ? stamp(r.lastTime * 1000) : "—"}</td><td class="ts">${r ? time(r.at) : "—"}</td></tr>`;
       })
       .join("");
 
@@ -144,7 +151,7 @@
 
       <section class="panel">
         <h2>Scan-overzicht <span class="muted small">— klik om de range in de grafiek te zien</span></h2>
-        ${cfg.pairs.length ? `<table class="table clickable"><thead><tr><th>Pair</th><th>TF</th><th>Resultaat</th></tr></thead><tbody>${scanRows}</tbody></table>` : '<p class="muted">Kies hierboven minstens één pair en timeframe.</p>'}
+        ${cfg.pairs.length ? `<table class="table clickable"><thead><tr><th>Pair</th><th>TF</th><th>Resultaat</th><th title="Begin van de push of dump waaruit de range is getekend">Range sinds</th><th title="Moment van de reclaim of retest">Setup</th><th title="Tijd van de laatste candle in de data">Laatste candle</th><th title="Wanneer dit pair het laatst is gescand">Gescand</th></tr></thead><tbody>${scanRows}</tbody></table>` : '<p class="muted">Kies hierboven minstens één pair en timeframe.</p>'}
       </section>`;
 
     // events

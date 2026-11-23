@@ -43,6 +43,23 @@ window.TD = window.TD || {};
       : { day: "2-digit", month: "short", year: "numeric" });
   }
 
+  // Prijs met een passend aantal decimalen (geen "346,470001").
+  function price(v) {
+    if (v === null || v === undefined || v === "" || isNaN(v)) return "—";
+    const a = Math.abs(+v);
+    const d = a >= 1000 ? 2 : a >= 10 ? 2 : a >= 1 ? 4 : a >= 0.01 ? 5 : 8;
+    return (+v).toLocaleString("nl-NL", { maximumFractionDigits: d });
+  }
+
+  // Korte tijdstempel: "23 nov 14:00" (met jaar als het niet dit jaar is).
+  function stamp(v) {
+    if (!v) return "—";
+    const d = new Date(v);
+    if (isNaN(d)) return "—";
+    const sameYear = d.getFullYear() === new Date().getFullYear();
+    return d.toLocaleString("nl-NL", { day: "numeric", month: "short", ...(sameYear ? {} : { year: "numeric" }), hour: "2-digit", minute: "2-digit" });
+  }
+
   // "BINANCE:BTCUSDT" -> "BTCUSDT"
   function shortSym(s) {
     return String(s || "").split(":").pop();
@@ -99,5 +116,5 @@ window.TD = window.TD || {};
     });
   }
 
-  TD.util = { esc, money, pct, num, r, date, shortSym, signClass, nowLocal, download, compressImage };
+  TD.util = { esc, money, pct, num, price, stamp, r, date, shortSym, signClass, nowLocal, download, compressImage };
 })(window.TD);
