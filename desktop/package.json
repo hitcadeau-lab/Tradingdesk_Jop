@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.3.1",
+  "version": "1.4.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 3,
     "webMinShell": 2,
-    "releaseNotes": "Notifier: tijdstempels in het scan-overzicht (range sinds, setup, laatste candle, gescand) en nettere prijzen."
+    "releaseNotes": "Meldingen: bel rechtsboven met TP/SL/break-even-meldingen voor je open trades, en trades sluiten vanuit een melding (vooraf ingevuld)."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
