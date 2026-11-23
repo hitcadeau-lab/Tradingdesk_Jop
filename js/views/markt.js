@@ -135,17 +135,20 @@
       });
 
     root.querySelectorAll("[data-mode]").forEach((b) =>
-      b.addEventListener("click", () => {
-        chartMode = b.dataset.mode;
-        try {
-          localStorage.setItem("td.chartMode", chartMode);
-        } catch {}
-        root.querySelectorAll("[data-mode]").forEach((x) => x.classList.toggle("active", x === b));
-        mountWidgets(selected);
-      })
+      b.addEventListener("click", () => setMode(b.dataset.mode, selected))
     );
 
     if (selected) mountWidgets(selected);
+  }
+
+  // Wissel tussen TradingView en de range-weergave (en onthoud de keuze).
+  function setMode(mode, symbol) {
+    chartMode = mode;
+    try {
+      localStorage.setItem("td.chartMode", chartMode);
+    } catch {}
+    document.querySelectorAll("[data-mode]").forEach((x) => x.classList.toggle("active", x.dataset.mode === mode));
+    mountWidgets(symbol);
   }
 
   // Range-weergave: automatisch gevonden range + setup in Lightweight Charts.
@@ -156,11 +159,13 @@
       rangeCleanup = res.cleanup;
       const R = res.range, g = res.signal, nm = TD.notifier;
       sum.hidden = false;
-      sum.innerHTML = R
+      const text = R
         ? `Range ${TD.util.num(R.low, 6)} – ${TD.util.num(R.high, 6)} · mid ${TD.util.num(R.mid, 6)} · ${
             g ? `<strong>${esc(g.direction)}</strong>: ${esc(nm.describe({ ...g, status: g.status }))}` : "geen setup op dit moment"
           } · <a href="#/notifier/range?symbol=${encodeURIComponent(symbol)}&tf=${chartMode}">details</a>`
         : "Geen geldige range gevonden op dit timeframe: de markt trendt of is uitgebroken.";
+      sum.innerHTML = `<span>${text}</span><button type="button" class="icon close-range" title="Range-weergave sluiten" aria-label="Range-weergave sluiten">×</button>`;
+      sum.querySelector(".close-range").addEventListener("click", () => setMode("tv", symbol));
     } catch (e) {
       chart.innerHTML = `<p class="neg pad">${esc(e.message)}</p>`;
       sum.hidden = true;
