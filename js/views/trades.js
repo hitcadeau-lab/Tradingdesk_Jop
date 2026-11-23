@@ -81,6 +81,72 @@
     );
   }
 
+  // ---------------- Plan & marktbeeld ----------------
+  const PLAN_KEYS = ["direction", "entry", "stopLoss", "tp1", "tp2", "tp3", "rangeHigh", "rangeLow", "rangeTf", "trigger", "setup", "riskPct"];
+  function makePlan(o, riskAmount) {
+    const plan = { placedAt: new Date().toISOString(), riskAmount, currency: S.getSettings().currency };
+    for (const k of PLAN_KEYS) plan[k] = o[k] ?? null;
+    return plan;
+  }
+  // Welke velden zijn na het plaatsen nog veranderd?
+  function planChanges(t) {
+    if (!t.plan) return [];
+    const label = { entry: "entry", stopLoss: "stoploss", tp1: "TP1", tp2: "TP2", tp3: "TP3", rangeHigh: "range high", rangeLow: "range low", direction: "richting", riskPct: "risico %" };
+    return Object.keys(label).filter((k) => String(t.plan[k] ?? "") !== String(t[k] ?? "")).map((k) => label[k]);
+  }
+  const SNAP_TF = { "15m": "15m", "1H": "1h", "4H": "4h" };
+  async function marketSnapshot(o) {
+    const tf = SNAP_TF[o.rangeTf] || "1h";
+    if (!TD.marketData || !TD.marketData.source(o.ticker)) return null;
+    try {
+      const candles = await Promise.race([
+        TD.marketData.candles(o.ticker, tf, 300),
+        new Promise((_, rej) => setTimeout(() => rej(new Error("timeout")), 8000)),
+      ]);
+      return { tf, takenAt: new Date().toISOString(), candles: candles.slice(-150).map((c) => [c.time, c.open, c.high, c.low, c.close]) };
+    } catch {
+      return null; // geen data (bijv. offline of aandeel in de browser): plan wordt wel bewaard
+    }
+  }
+  let snapCleanup = null;
+  function teardown() {
+    if (snapCleanup) snapCleanup();
+    snapCleanup = null;
+  }
+  function mountSnapshot(el, t) {
+    if (snapCleanup) snapCleanup();
+    snapCleanup = null;
+    if (!el || !t.snapshot || !window.LightweightCharts) return;
+    const LC = window.LightweightCharts;
+    const pl = t.plan || t;
+    const chart = LC.createChart(el, {
+      height: 380, autoSize: true,
+      layout: { background: { color: "#0f1115" }, textColor: "#8b919c" },
+      grid: { vertLines: { color: "#1f232c" }, horzLines: { color: "#1f232c" } },
+      rightPriceScale: { borderColor: "#262a33" },
+      timeScale: { borderColor: "#262a33", timeVisible: true },
+      localization: { locale: "nl-NL" },
+    });
+    const series = chart.addCandlestickSeries({ upColor: "#26a69a", downColor: "#ef5350", wickUpColor: "#26a69a", wickDownColor: "#ef5350", borderVisible: false });
+    const data = t.snapshot.candles.map(([time, open, high, low, close]) => ({ time, open, high, low, close }));
+    series.setData(data);
+    const line = (price, color, title, style) => price !== null && price !== undefined && price !== "" && series.createPriceLine({ price: +price, color, lineWidth: style ? 1 : 2, lineStyle: style ?? LC.LineStyle.Solid, axisLabelVisible: true, title });
+    if (pl.rangeHigh != null && pl.rangeLow != null) {
+      line(pl.rangeHigh, "#ef5350", "Range high", LC.LineStyle.Dashed);
+      line((+pl.rangeHigh + +pl.rangeLow) / 2, "#f5a623", "Mid", LC.LineStyle.Dashed);
+      line(pl.rangeLow, "#26a69a", "Range low", LC.LineStyle.Dashed);
+    }
+    line(pl.entry, "#2962ff", "Entry");
+    line(pl.stopLoss, "#ef5350", "SL");
+    line(pl.tp1, "#f5a623", "TP1");
+    line(pl.tp2, "#26a69a", "TP2");
+    line(pl.tp3, "#26a69a", "TP3");
+    const last = data[data.length - 1];
+    if (last) series.setMarkers([{ time: last.time, position: pl.direction === "Short" ? "aboveBar" : "belowBar", color: "#2962ff", shape: pl.direction === "Short" ? "arrowDown" : "arrowUp", text: "Geplaatst" }]);
+    chart.timeScale().fitContent();
+    snapCleanup = () => chart.remove();
+  }
+
   // ---------------- Formulier ----------------
   function renderForm(root, params, query) {
     const editing = params.id ? S.getTrade(params.id) : null;
@@ -192,17 +258,9 @@
               <label>TP 3<input type="number" step="any" name="tp3" value="${esc(t.tp3 ?? "")}"></label>
               <div class="calc" id="calc"></div>
             </div>
-            <div class="drawing">
-              <div class="label">Trade drawing</div>
-              <div id="drawing-drop" class="drop" tabindex="0">
-                ${t.drawing ? `<img src="${t.drawing}" alt="Trade drawing">` : `<span>Sleep een screenshot hierheen, plak met Cmd+V, of klik om te kiezen</span>`}
-              </div>
-              <input type="file" id="drawing-file" accept="image/*" hidden>
-              <div class="row gap">
-                <button type="button" class="btn small" id="drawing-clear" ${t.drawing ? "" : "hidden"}>Afbeelding verwijderen</button>
-              </div>
-              <label>Chart — Range (link)<input type="url" name="chartRange" value="${esc(t.chartRange || "")}" placeholder="https://www.tradingview.com/x/..."></label>
-              <label>Chart — Trigger (link)<input type="url" name="chartTrigger" value="${esc(t.chartTrigger || "")}" placeholder="https://www.tradingview.com/x/..."></label>
+            <div class="levels-live">
+              <div class="label">Levels <span class="muted">— live, verandert mee met wat je invult</span></div>
+              <div id="levels-viz"></div>
             </div>
           </div>
         </section>
@@ -320,6 +378,7 @@
         if (pos > 0.35 && pos < 0.65) rw = "Let op: je entry ligt rond de mid. Daar heb je geen edge, triggers zoek je bij de randen.";
       }
       root.querySelector("#range-warn").textContent = rw;
+      root.querySelector("#levels-viz").innerHTML = TD.levelsViz.html({ ...o, riskAmount: risk, currency: S.getSettings().currency });
       const sug = S.suggestedPnl(o, risk);
       root.querySelector("#pnl-suggest").textContent =
         o.status === "closed" && sug !== null ? `Voorstel: ${money(sug)} (50% op TP1, rest op BE/TP2)` : "";
@@ -357,44 +416,8 @@
       paintCalc();
     });
 
-    // ----- trade drawing (upload / slepen / plakken) -----
-    const drop = root.querySelector("#drawing-drop");
-    const file = root.querySelector("#drawing-file");
-    const clear = root.querySelector("#drawing-clear");
-    async function setImage(f) {
-      if (!f || !f.type.startsWith("image/")) return;
-      drawing = await compressImage(f);
-      drop.innerHTML = `<img src="${drawing}" alt="Trade drawing">`;
-      clear.hidden = false;
-    }
-    drop.addEventListener("click", () => file.click());
-    drop.addEventListener("keydown", (e) => (e.key === "Enter" || e.key === " ") && file.click());
-    file.addEventListener("change", () => setImage(file.files[0]));
-    drop.addEventListener("dragover", (e) => {
-      e.preventDefault();
-      drop.classList.add("over");
-    });
-    drop.addEventListener("dragleave", () => drop.classList.remove("over"));
-    drop.addEventListener("drop", (e) => {
-      e.preventDefault();
-      drop.classList.remove("over");
-      setImage(e.dataTransfer.files[0]);
-    });
-    root.addEventListener("paste", (e) => {
-      const item = [...(e.clipboardData?.items || [])].find((i) => i.type.startsWith("image/"));
-      if (item) {
-        e.preventDefault();
-        setImage(item.getAsFile());
-      }
-    });
-    clear.addEventListener("click", () => {
-      drawing = null;
-      drop.innerHTML = `<span>Sleep een screenshot hierheen, plak met Cmd+V, of klik om te kiezen</span>`;
-      clear.hidden = true;
-    });
-
     // ----- opslaan -----
-    form.addEventListener("submit", (e) => {
+    form.addEventListener("submit", async (e) => {
       e.preventDefault();
       const o = readTrade();
       const passed = paintChecklist();
@@ -409,6 +432,14 @@
       if (!wl.some((w) => w.symbol === o.ticker)) {
         wl.push({ symbol: o.ticker, market: o.market });
         S.setWatchlist(wl);
+      }
+      // Bij het plaatsen: plan en marktbeeld vastleggen, zodat je later ziet waarom je de trade nam.
+      if (!o.plan && !editing) {
+        const btn = form.querySelector('button[type="submit"]');
+        btn.disabled = true;
+        btn.textContent = "Plan vastleggen…";
+        o.plan = makePlan(o, S.riskAmount(o, S.computePortfolio()));
+        o.snapshot = await marketSnapshot(o);
       }
       const saved = S.saveTrade(o);
       if (saved) location.hash = "#/trades/" + saved.id;
@@ -445,6 +476,7 @@
     }).join("");
 
     const tg = S.targets(t);
+    const changes = planChanges(t);
 
     root.innerHTML = `
       <div class="page-head">
@@ -504,13 +536,33 @@
         </section>
 
         <section class="panel span2">
+          <h2>${t.plan ? "Plan bij het plaatsen" : "Levels"} ${t.plan ? `<span class="muted small">— vastgelegd op ${date(t.plan.placedAt, true)}</span>` : ""}</h2>
+          ${changes.length ? `<p class="warn-text small">Na het plaatsen aangepast: ${esc(changes.join(", "))}. Hieronder zie je het oorspronkelijke plan.</p>` : ""}
+          <div class="plan-grid">
+            <div>${TD.levelsViz.html({ ...(t.plan || t), riskAmount: t.plan ? t.plan.riskAmount : risk, currency: t.plan ? t.plan.currency : S.getSettings().currency })}</div>
+            <div>
+              <div class="label">Marktbeeld bij het plaatsen ${t.snapshot ? `<span class="muted">(${esc(t.plan?.rangeTf || t.snapshot.tf)}, ${date(t.snapshot.takenAt, true)})</span>` : ""}</div>
+              ${t.snapshot ? `<div id="snap-chart" class="snap-chart"></div>` : `<p class="muted">Geen marktbeeld vastgelegd${t.plan ? " (geen koersdata beschikbaar op dat moment)" : " (trade van vóór deze functie)"}.</p>`}
+              <dl class="dl plan-meta">
+                <dt>Trigger</dt><dd>${esc((t.plan || t).trigger || "—")}</dd>
+                <dt>Setup</dt><dd>${esc((t.plan || t).setup || t.setup || "—")}</dd>
+                <dt>Range-TF</dt><dd>${esc((t.plan || t).rangeTf || "—")}</dd>
+              </dl>
+            </div>
+          </div>
+        </section>
+        ${
+          t.drawing || t.chartRange || t.chartTrigger
+            ? `<section class="panel span2">
           <h2>Trade drawing</h2>
-          ${t.drawing ? `<a href="${t.drawing}" target="_blank" rel="noopener"><img class="drawing-img" src="${t.drawing}" alt="Trade drawing"></a>` : `<p class="muted">Geen afbeelding toegevoegd.</p>`}
+          ${t.drawing ? `<a href="${t.drawing}" target="_blank" rel="noopener"><img class="drawing-img" src="${t.drawing}" alt="Trade drawing"></a>` : ""}
           <div class="row gap">
             ${t.chartRange ? `<a class="btn small" href="${esc(t.chartRange)}" target="_blank" rel="noopener">Chart — Range ↗</a>` : ""}
             ${t.chartTrigger ? `<a class="btn small" href="${esc(t.chartTrigger)}" target="_blank" rel="noopener">Chart — Trigger ↗</a>` : ""}
           </div>
-        </section>
+        </section>`
+            : ""
+        }
 
         ${
           t.status === "closed"
@@ -528,6 +580,8 @@
         }
       </div>`;
 
+    mountSnapshot(root.querySelector("#snap-chart"), t);
+
     root.querySelector("#del").addEventListener("click", () => {
       if (confirm("Deze trade definitief verwijderen?")) {
         S.deleteTrade(t.id);
@@ -541,5 +595,5 @@
   }
 
   TD.views = TD.views || {};
-  TD.views.trades = { renderList, renderForm, renderDetail, statusBadge, scoreBadge };
+  TD.views.trades = { renderList, renderForm, renderDetail, statusBadge, scoreBadge, teardown };
 })(window.TD);

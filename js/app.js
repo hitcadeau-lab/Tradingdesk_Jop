@@ -15,6 +15,7 @@
     const V = TD.views;
     if (section !== "notifier" && V.notifier) V.notifier.teardown();
     if (section !== "advise" && V.advise) V.advise.teardown();
+    if (V.trades) V.trades.teardown();
     document.querySelectorAll("[data-nav]").forEach((l) => l.classList.toggle("active", l.dataset.nav === (section || "markt")));
 
     switch (section) {
