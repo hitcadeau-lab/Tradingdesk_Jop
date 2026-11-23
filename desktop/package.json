@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.2.0",
+  "version": "1.3.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 3,
     "webMinShell": 2,
-    "releaseNotes": "Notifier (range-setups met meldingen), Advise (beoordeling + calculator), historische setups en range-weergave in Markt."
+    "releaseNotes": "Trades: live levels en chart met je lijnen in het formulier; plan en marktbeeld worden bij het plaatsen vastgelegd."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
