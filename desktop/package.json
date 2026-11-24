@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.6.0",
+  "version": "1.7.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 5,
     "webMinShell": 5,
-    "releaseNotes": "Kraken-account koppelen (alleen lezen): je echte saldo, equity en posities, en je startkapitaal uit Kraken. De API-key staat versleuteld in de macOS-sleutelhanger. Vraagt een nieuwe .dmg."
+    "releaseNotes": "Breakouts: de Notifier meldt breakouts met acceptatie en retest, met een strengere beoordeling in Advise en nieuwe Leerschool-opdrachten. Uitleg bij elke status als je erover hovert, links naar de pair in Markt vanaf een trade, en papier-orders stoppen als je de trade in je journal sluit."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
