@@ -7,6 +7,8 @@ Alleen GET-verzoeken naar de toegestane adressen hieronder worden doorgegeven.
 Gebruik: python3 preview-server.py [poort]
 """
 import http.server
+import os
+import re
 import shutil
 import subprocess
 import socketserver
@@ -35,7 +37,31 @@ class Handler(http.server.SimpleHTTPRequestHandler):
     def do_GET(self):
         if self.path.startswith("/proxy?"):
             return self.proxy()
+        if urllib.parse.urlparse(self.path).path in ("/", "/index.html"):
+            return self.index()
         return super().do_GET()
+
+    def index(self):
+        """index.html met ?v=<wijzigtijd> achter elk script en stylesheet. Zo laadt de browser
+        altijd de nieuwste versie, ook als hij een oud bestand in zijn cache heeft."""
+        with open("index.html", encoding="utf-8") as f:
+            html = f.read()
+
+        def stamp(m):
+            path = m.group(2)
+            try:
+                v = int(os.path.getmtime(path))
+            except OSError:
+                return m.group(0)
+            return f'{m.group(1)}{path}?v={v}"'
+
+        html = re.sub(r'((?:src|href)=")((?:js|css)/[^"?]+)"', stamp, html)
+        body = html.encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def proxy(self):
         query = urllib.parse.urlparse(self.path).query
