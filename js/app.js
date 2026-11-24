@@ -77,6 +77,7 @@
   }
 
   TD.app = { rerender };
+  if (TD.markets) TD.markets.migrate(); // eenmalig: alles naar Kraken
   route();
   if (TD.inbox) {
     TD.inbox.onChange(paintBell);

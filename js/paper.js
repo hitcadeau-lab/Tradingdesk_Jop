@@ -47,7 +47,7 @@
     const errors = [], warnings = [];
     const a = account();
     const symbol = K.toSymbol(trade.ticker);
-    if (!symbol) return { errors: ["Papier-modus werkt met crypto-pairs (bijv. BINANCE:BTCUSDT → PF_XBTUSD)."] };
+    if (!symbol) return { errors: ["Papier-modus werkt met Kraken-perpetuals (bijv. KRAKEN:PF_XBTUSD)."] };
     let inst, tk;
     try {
       [inst, tk] = await Promise.all([K.instrument(symbol), K.ticker(symbol)]);

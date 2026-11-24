@@ -62,7 +62,9 @@ window.TD = window.TD || {};
 
   // "BINANCE:BTCUSDT" -> "BTCUSDT"
   function shortSym(s) {
-    return String(s || "").split(":").pop();
+    // Kraken-perpetuals: "KRAKEN:PF_XBTUSD" → "BTC", "KRAKEN:PF_AMZNXUSD" → "AMZNx".
+    const k = window.TD.markets && window.TD.markets.short(s);
+    return k || String(s || "").split(":").pop();
   }
 
   function signClass(v) {

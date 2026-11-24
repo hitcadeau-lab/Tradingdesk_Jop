@@ -381,14 +381,8 @@ window.TD = window.TD || {};
   }
 
   // ---------- Watchlist ----------
-  const DEFAULT_WATCHLIST = [
-    { symbol: "BINANCE:BTCUSDT", market: "crypto" },
-    { symbol: "BINANCE:ETHUSDT", market: "crypto" },
-    { symbol: "BINANCE:SOLUSDT", market: "crypto" },
-    { symbol: "NASDAQ:AAPL", market: "stock" },
-    { symbol: "NASDAQ:NVDA", market: "stock" },
-    { symbol: "EURONEXT:ASML", market: "stock" },
-  ];
+  // Standaard: alle markten via Kraken Futures (zie js/markets.js).
+  const DEFAULT_WATCHLIST = TD.markets ? TD.markets.defaultWatchlist() : [];
 
   function getWatchlist() {
     let w = load(KEYS.watchlist, null);

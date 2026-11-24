@@ -27,7 +27,13 @@
       } catch {}
     }
     const wl = S.getWatchlist();
-    const selected = params.symbol || (wl[0] && wl[0].symbol) || null;
+    const MK = TD.markets;
+    // Oude links (bijv. BINANCE:SOLUSDT vanaf een oude trade) openen de Kraken-perpetual.
+    const selected = (params.symbol && MK ? MK.canonical(params.symbol) : params.symbol) || (wl[0] && wl[0].symbol) || null;
+    const nameOf = (sym) => {
+      const m = MK && MK.info(sym);
+      return m ? m.label : sym;
+    };
 
     const group = (market) =>
       wl
@@ -35,7 +41,7 @@
         .map(
           (w) => `
           <li class="${w.symbol === selected ? "active" : ""}">
-            <a href="#/markt/${encodeURIComponent(w.symbol)}">${esc(w.symbol)}</a>
+            <a href="#/markt/${encodeURIComponent(w.symbol)}" title="${esc(w.symbol)}"><strong>${esc(shortSym(w.symbol))}</strong> <span class="muted small">${esc(nameOf(w.symbol))}</span></a>
             <button class="icon remove" data-remove="${esc(w.symbol)}" title="Verwijder ${esc(w.symbol)}">×</button>
           </li>`
         )
@@ -46,11 +52,7 @@
         <aside class="panel watchlist">
           <h2>Watchlist</h2>
           <form id="add-form" class="add-form" autocomplete="off">
-            <input id="add-input" placeholder="bijv. BINANCE:XRPUSDT of NASDAQ:TSLA" aria-label="Ticker toevoegen">
-            <select id="add-market" aria-label="Markt">
-              <option value="crypto">Crypto</option>
-              <option value="stock">Aandeel</option>
-            </select>
+            <input id="add-input" placeholder="bijv. XRP of COIN" aria-label="Kraken-pair toevoegen">
             <button type="submit" class="btn primary">+</button>
           </form>
           <p id="add-error" class="error" hidden></p>
@@ -58,7 +60,7 @@
           <ul class="tick-list">${group("crypto")}</ul>
           <h3>Aandelen</h3>
           <ul class="tick-list">${group("stock")}</ul>
-          <p class="hint">Gebruik <code>BEURS:TICKER</code>, bijv. <code>BINANCE:BTCUSDT</code>, <code>BYBIT:ETHUSDT</code> of <code>EURONEXT:ADYEN</code>.</p>
+          <p class="hint">Alles loopt via <strong>Kraken Futures</strong> (perpetuals). Typ een coin (<code>XRP</code>) of een aandeel (<code>COIN</code>, <code>HOOD</code>); de app zoekt de bijbehorende perpetual op Kraken.</p>
         </aside>
 
         <section class="markt-main">
@@ -66,7 +68,8 @@
             selected
               ? `
           <div class="markt-head">
-            <h2 class="sym">${esc(selected)}</h2>
+            <div><h2 class="sym">${esc(shortSym(selected))} <span class="muted small">Perp · ${esc(nameOf(selected))}</span></h2>
+            <div class="muted small">${esc(selected)}${MK && MK.info(selected) && MK.info(selected).preIpo ? ' · <span class="warn-text">nog niet beursgenoteerd: speculatief, beweegt hard</span>' : ""}</div></div>
             <label class="inline">Interval
               <select id="interval">
                 ${Object.keys(TA_INTERVAL)
@@ -87,7 +90,8 @@
             <a class="btn primary" href="#/trades/new?ticker=${encodeURIComponent(selected)}">+ Nieuwe trade op ${esc(shortSym(selected))}</a>
           </div>
           <div class="markt-grid">
-            <div class="panel chart-panel"><div id="tv-chart" class="tv-widget"></div><div id="range-summary" class="range-summary" hidden></div></div>
+            <div class="panel chart-panel"><div id="tv-chart" class="tv-widget"></div><div id="range-summary" class="range-summary" hidden></div>
+              ${MK && MK.tvSymbol(selected) ? `<p class="muted small chart-src">TradingView toont ${esc(MK.tvSymbol(selected))}${MK.info(selected) && MK.info(selected).market === "stock" ? " (het aandeel zelf)" : ""}. Je handelt de Kraken-perpetual ${esc(shortSym(selected))}; <strong>Range 1H / 4H</strong> tonen de echte Kraken-koersen.</p>` : ""}</div>
             <div class="panel ta-panel"><h2>Technische analyse</h2><div id="tv-ta" class="tv-widget ta"></div></div>
           </div>
           <div class="panel">
@@ -100,26 +104,28 @@
       </div>`;
 
     // Events
-    root.querySelector("#add-form").addEventListener("submit", (e) => {
+    root.querySelector("#add-form").addEventListener("submit", async (e) => {
       e.preventDefault();
       const input = root.querySelector("#add-input");
       const err = root.querySelector("#add-error");
-      const sym = input.value.trim().toUpperCase().replace(/\s+/g, "");
       err.hidden = true;
-      if (!sym) return;
-      if (!/^([A-Z0-9_]+:)?[A-Z0-9._!/-]+$/.test(sym)) {
-        err.textContent = "Ongeldige ticker. Gebruik bijv. BINANCE:BTCUSDT of NASDAQ:AAPL.";
+      if (!input.value.trim()) return;
+      let found;
+      try {
+        found = await MK.resolve(input.value);
+      } catch (ex) {
+        err.textContent = ex.message;
         err.hidden = false;
         return;
       }
-      if (wl.some((w) => w.symbol === sym)) {
-        err.textContent = sym + " staat al in je watchlist.";
+      if (wl.some((w) => w.symbol === found.symbol)) {
+        err.textContent = shortSym(found.symbol) + " staat al in je watchlist.";
         err.hidden = false;
         return;
       }
-      wl.push({ symbol: sym, market: root.querySelector("#add-market").value });
+      wl.push(found);
       S.setWatchlist(wl);
-      location.hash = "#/markt/" + encodeURIComponent(sym);
+      location.hash = "#/markt/" + encodeURIComponent(found.symbol);
     });
 
     root.querySelectorAll("[data-remove]").forEach((b) =>
@@ -183,7 +189,7 @@
   function tradesFor(symbol) {
     const p = S.computePortfolio();
     const list = S.getTrades()
-      .filter((t) => t.ticker === symbol)
+      .filter((t) => t.ticker === symbol || (TD.markets && TD.markets.canonical(t.ticker) === symbol))
       .sort((a, b) => (b.entryDate || "").localeCompare(a.entryDate || ""));
     if (!list.length) return `<p class="muted">Nog geen trades op dit ticker.</p>`;
     return `<table class="table clickable"><thead><tr><th>Datum</th><th>Richting</th><th>Setup</th><th>Status</th><th class="num">R</th><th class="num">PnL</th></tr></thead><tbody>
@@ -207,14 +213,20 @@
     chart.innerHTML = "";
     const sum = document.getElementById("range-summary");
     if (sum) sum.hidden = true;
-    if (chartMode !== "tv") {
+    const tv = TD.markets ? TD.markets.tvSymbol(symbol) : symbol;
+    if (chartMode !== "tv" || !tv) {
+      // Geen TradingView-symbool (pre-IPO): toon de range-grafiek met Kraken-koersen.
+      if (!tv && chartMode === "tv") {
+        chartMode = "1h";
+        document.querySelectorAll("[data-mode]").forEach((x) => x.classList.toggle("active", x.dataset.mode === "1h"));
+      }
       mountRange(symbol, chart);
     } else if (typeof TradingView === "undefined") {
       chart.innerHTML = `<p class="muted pad">TradingView kon niet laden. Controleer je internetverbinding.</p>`;
     } else {
       new TradingView.widget({
         container_id: "tv-chart",
-        symbol,
+        symbol: tv,
         interval,
         autosize: true,
         timezone: "Europe/Amsterdam",
@@ -227,13 +239,17 @@
       });
     }
     ta.innerHTML = "";
+    if (!tv) {
+      ta.innerHTML = `<p class="muted small pad">Geen beursnotering, dus geen TradingView-analyse. Gebruik de range-grafiek (Kraken-koersen) en Get advise in de Notifier.</p>`;
+      return;
+    }
     const holder = document.createElement("div");
     holder.className = "tradingview-widget-container__widget";
     const script = document.createElement("script");
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js";
     script.async = true;
     script.textContent = JSON.stringify({
-      symbol,
+      symbol: tv,
       interval: TA_INTERVAL[interval],
       width: "100%",
       height: "100%",

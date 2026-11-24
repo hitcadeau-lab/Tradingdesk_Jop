@@ -102,7 +102,7 @@
         const src = M.source(sym);
         const noData = src && src.type === "yahoo" && !M.stocksAvailable();
         return `<tr>
-          <td><strong>${esc(shortSym(sym))}</strong> <span class="muted small">${esc(sym)}</span></td>
+          <td><strong>${esc(shortSym(sym))}</strong> <span class="muted small">${esc((TD.markets.info(sym) || {}).label || sym)}</span></td>
           <td class="muted small">${src ? esc(M.feedLabel(sym)) : "—"}${noData ? ` · <span class="warn-text">${S.desktop ? "nieuwste .dmg nodig" : "alleen in de Mac-app"}</span>` : ""}</td>
           ${TFS.map((tf) => `<td class="center"><input type="checkbox" data-pair="${esc(sym)}" data-tf="${tf}" ${p && p.tfs.includes(tf) ? "checked" : ""} aria-label="${esc(sym)} ${M.TF[tf].label}"></td>`).join("")}
         </tr>`;
@@ -164,7 +164,7 @@
           <p class="muted small">Vink aan voor welke pairs en timeframes je een melding wilt. In de video’s werkt Camille vooral met de 4H- en 1H-range, en soms 15m.</p>
           <table class="table"><thead><tr><th>Pair</th><th>Data</th>${TFS.map((tf) => `<th class="center">${M.TF[tf].label}</th>`).join("")}</tr></thead><tbody>${pairRows}</tbody></table>
           <form id="n-add" class="add-form" autocomplete="off" style="margin-top:10px">
-            <input id="n-add-input" placeholder="Pair toevoegen, bijv. BINANCE:XRPUSDT" aria-label="Pair toevoegen">
+            <input id="n-add-input" placeholder="Kraken-pair toevoegen, bijv. XRP of COIN" aria-label="Pair toevoegen">
             <button class="btn small primary" type="submit">Toevoegen</button>
           </form>
           <p class="muted small">Toegevoegde pairs komen ook in je watchlist onder Markt.</p>
@@ -220,14 +220,19 @@
         N.setConfig({ pairs: [...pairs.values()] });
       })
     );
-    root.querySelector("#n-add").addEventListener("submit", (e) => {
+    root.querySelector("#n-add").addEventListener("submit", async (e) => {
       e.preventDefault();
-      const sym = root.querySelector("#n-add-input").value.trim().toUpperCase().replace(/\s+/g, "");
-      if (!sym) return;
-      const src = M.source(sym);
-      if (!src) return alert("Onbekend pair. Gebruik bijv. BINANCE:BTCUSDT of NASDAQ:AAPL.");
+      const input = root.querySelector("#n-add-input").value;
+      if (!input.trim()) return;
+      let found;
+      try {
+        found = await TD.markets.resolve(input);
+      } catch (ex) {
+        return alert(ex.message);
+      }
+      const sym = found.symbol;
       const wl2 = S.getWatchlist();
-      if (!wl2.some((w) => w.symbol === sym)) S.setWatchlist([...wl2, { symbol: sym, market: src.type === "binance" ? "crypto" : "stock" }]);
+      if (!wl2.some((w) => w.symbol === sym)) S.setWatchlist([...wl2, found]);
       const pairs = N.getConfig().pairs.filter((p) => p.symbol !== sym);
       N.setConfig({ pairs: [...pairs, { symbol: sym, tfs: ["1h", "4h"] }] });
       N.scan();

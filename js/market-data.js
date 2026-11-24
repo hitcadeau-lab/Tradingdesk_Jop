@@ -19,6 +19,8 @@
   // "BINANCE:BTCUSDT" → { type: "binance", id: "BTCUSDT" }, "NASDAQ:AAPL" → { type: "yahoo", id: "AAPL" }
   function source(symbol) {
     const s = String(symbol || "").toUpperCase();
+    // Kraken Futures-perpetual: "KRAKEN:PF_XBTUSD"
+    if (/^KRAKEN:PF_[A-Z0-9]+$/.test(s)) return { type: "kraken", id: s.slice(7), label: "Kraken Futures" };
     const [ex, raw] = s.includes(":") ? s.split(":") : ["", s];
     if (CRYPTO_EXCHANGES.includes(ex) || (!ex && /(USDT|USDC|BUSD|FDUSD)$/.test(raw))) {
       let id = raw.replace(/[-/_]/g, "").replace(/\.P$|PERP$/, "");
@@ -126,7 +128,12 @@
     const hit = cache.get(key);
     if (hit && Date.now() - hit.at < 60000) return hit.data;
     let data;
-    if (src.type === "binance") {
+    if (src.type === "kraken") {
+      if (!TD.net || !TD.net.canProxy())
+        throw new Error("Kraken-koersen werken in de Mac-app en in de preview (de browser mag Kraken niet zelf lezen).");
+      data = await kraken(src.id, tf, limit);
+      lastFeed.set(String(symbol).toUpperCase(), `Kraken Futures (${src.id})`);
+    } else if (src.type === "binance") {
       const ks = await krakenSymbol(symbol);
       if (ks) {
         try {

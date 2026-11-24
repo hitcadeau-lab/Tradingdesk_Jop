@@ -13,6 +13,7 @@
   // "BINANCE:BTCUSDT" → "PF_XBTUSD" (perpetual in USD). Null als het geen crypto-pair is.
   function toSymbol(ticker) {
     const src = TD.marketData.source(ticker);
+    if (src && src.type === "kraken") return src.id;
     if (!src || src.type !== "binance") return null;
     const m = src.id.match(/^([A-Z0-9]+?)(USDT|USDC|USD|BUSD|FDUSD)$/);
     if (!m) return null;
