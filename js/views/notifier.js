@@ -333,14 +333,24 @@
         ${signal ? `<a class="btn" href="#/trades/new?${tradeQ(signal)}">Trade plaatsen</a>` : ""}`;
       const menu = actions.querySelector("#d-menu");
       const btn = actions.querySelector("#d-advise");
+      // Menu opent pas na een klik; klik ernaast of Esc sluit het weer.
+      const closeMenu = () => {
+        menu.hidden = true;
+        document.removeEventListener("click", onDoc);
+        document.removeEventListener("keydown", onKey);
+      };
+      const onDoc = (e) => !menu.contains(e.target) && closeMenu();
+      const onKey = (e) => e.key === "Escape" && closeMenu();
       btn.addEventListener("click", (e) => {
         e.stopPropagation();
-        menu.hidden = !menu.hidden;
+        if (!menu.hidden) return closeMenu();
+        menu.hidden = false;
+        document.addEventListener("click", onDoc);
+        document.addEventListener("keydown", onKey);
       });
-      document.addEventListener("click", () => (menu.hidden = true), { once: true });
       menu.querySelectorAll("[data-adv]").forEach((b) =>
         b.addEventListener("click", () => {
-          menu.hidden = true;
+          closeMenu();
           const kind = b.dataset.adv;
           if (kind === "current") return makeAdvice(btn, sig || { symbol: sym, tf: frame, ...signal, range, id: null });
           const plan = kind.startsWith("BO-") ? E.planBreakout(range, kind.slice(3)) : E.planSetup(range, kind);

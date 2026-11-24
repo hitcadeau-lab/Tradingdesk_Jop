@@ -1,3 +1,6 @@
+/* Verborgen is altijd verborgen, ook als een class een eigen display heeft. */
+[hidden] { display: none !important; }
+
 :root {
   --bg: #0f1115;
   --panel: #171a21;
