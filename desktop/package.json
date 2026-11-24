@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.9.0",
+  "version": "1.10.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 5,
     "webMinShell": 5,
-    "releaseNotes": "Mobiele meldingen via ntfy: setups, je trades en papier-orders als pushmelding op je telefoon. Instellen via Instellingen, Mobiele meldingen."
+    "releaseNotes": "Zelf tekenen in de grafiek van een nieuwe trade (range, entry, stop, TP's, verslepen, magneet, stop-voorstel, sneltoetsen) en een Vernieuwen-knop op Trades en op elke open trade."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
