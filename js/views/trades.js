@@ -38,6 +38,36 @@
     return `<td class="num">—</td>`;
   }
 
+  // ---------------- Vernieuwen ----------------
+  // Haalt verse koersen op en werkt bij: papier-orders (fills, TP/SL, open PnL) en de TP/SL/BE-check
+  // van je andere open trades. Met trade: alleen die ene trade.
+  let lastRefresh = null;
+  const clock = (ms) => new Date(ms).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+  async function refreshTrades(btn, out, trade, done) {
+    btn.disabled = true;
+    const label = btn.textContent;
+    btn.textContent = "↻ Bezig…";
+    if (out) out.textContent = "";
+    const jobs = [];
+    try {
+      if (trade) {
+        const plan = trade.broker && TD.paper ? TD.paper.planForTrade(trade.id) : null;
+        if (plan) jobs.push(TD.paper.sync({ planIds: [plan.id] }));
+        else if (TD.tradeAlerts) jobs.push(TD.tradeAlerts.check({ tradeId: trade.id, force: true }));
+      } else {
+        if (TD.paper) jobs.push(TD.paper.sync());
+        if (TD.tradeAlerts) jobs.push(TD.tradeAlerts.check({ force: true }));
+      }
+      await Promise.all(jobs);
+      lastRefresh = Date.now();
+      done();
+    } catch (e) {
+      btn.disabled = false;
+      btn.textContent = label;
+      if (out) out.textContent = "Vernieuwen mislukt: " + e.message;
+    }
+  }
+
   // ---------------- Overzicht ----------------
   function renderList(root, params, query) {
     const p = S.computePortfolio();
@@ -62,7 +92,11 @@
     root.innerHTML = `
       <div class="page-head">
         <h1>Trades</h1>
-        <a class="btn primary" href="#/trades/new">+ Nieuwe trade</a>
+        <div class="row gap">
+          <span class="muted small" id="refresh-out">${lastRefresh ? "Bijgewerkt " + clock(lastRefresh) : ""}</span>
+          <button class="btn" id="refresh" title="Koersen ophalen: fills, TP/SL en open PnL van al je open trades">↻ Vernieuwen</button>
+          <a class="btn primary" href="#/trades/new">+ Nieuwe trade</a>
+        </div>
       </div>
       <div class="filters">
         ${sel("status", "Status", [{ v: "open", l: "Open" }, { v: "closed", l: "Gesloten" }])}
@@ -102,6 +136,8 @@
       if (snapCleanup) snapCleanup();
       snapCleanup = un;
     }
+
+    root.querySelector("#refresh").addEventListener("click", (e) => refreshTrades(e.currentTarget, root.querySelector("#refresh-out"), null, () => renderList(root, params, query)));
 
     root.querySelectorAll("[data-filter]").forEach((s) =>
       s.addEventListener("change", () => {
@@ -905,6 +941,7 @@
           <div class="muted">${esc(t.setup)} · ${esc(t.tradeType)} · <a href="#/markt/${encodeURIComponent(t.ticker)}">${esc(t.ticker)} in Markt</a></div>
         </div>
         <div class="row gap">
+          ${t.status === "open" ? `<span class="muted small" id="refresh-out">${lastRefresh ? "Bijgewerkt " + clock(lastRefresh) : ""}</span><button class="btn" id="refresh" title="Verse koersen voor deze trade: fills, TP/SL en open PnL">↻ Vernieuwen</button>` : ""}
           ${t.status === "open" && !t.broker ? `<a class="btn primary" href="${TD.tradeAlerts ? TD.tradeAlerts.closeLink(t) : `#/trades/${t.id}/edit?close=1`}">Trade sluiten</a>` : ""}
           <a class="btn" href="#/trades/${t.id}/edit">Bewerken</a>
           <button class="btn danger" id="del">Verwijderen</button>
@@ -1021,6 +1058,9 @@
         if (prev) prev();
       };
     }
+
+    const rb = root.querySelector("#refresh");
+    if (rb) rb.addEventListener("click", () => refreshTrades(rb, root.querySelector("#refresh-out"), t, () => renderDetail(root, params)));
 
     root.querySelector("#del").addEventListener("click", () => {
       if (confirm("Deze trade definitief verwijderen?")) {

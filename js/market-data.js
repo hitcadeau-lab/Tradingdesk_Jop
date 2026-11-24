@@ -120,13 +120,14 @@
     return out;
   }
 
-  async function candles(symbol, tf, limit = 300) {
+  // opts.fresh: niet uit de cache (bijv. bij "Vernieuwen").
+  async function candles(symbol, tf, limit = 300, opts = {}) {
     if (!TF[tf]) throw new Error("Onbekend timeframe: " + tf);
     const src = source(symbol);
     if (!src) throw new Error("Onbekend ticker: " + symbol);
     const key = `${String(symbol).toUpperCase()}:${tf}:${limit}`;
     const hit = cache.get(key);
-    if (hit && Date.now() - hit.at < 60000) return hit.data;
+    if (hit && !opts.fresh && Date.now() - hit.at < 60000) return hit.data;
     let data;
     if (src.type === "kraken") {
       if (!TD.net || !TD.net.canProxy())

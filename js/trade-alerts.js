@@ -69,16 +69,25 @@
     };
   }
 
-  async function check() {
-    if (running || !I.getConfig().trades) return;
-    running = true;
+  // opts: { tradeId (alleen deze trade), force (ook als TP/SL-meldingen uit staan; verse koersen) }
+  async function check(opts = {}) {
+    if (running) return running;
+    if (!opts.force && !I.getConfig().trades) return;
+    running = run(opts);
     try {
-      const open = S.getTrades().filter((t) => t.status === "open" && !t.broker && TD.marketData.source(t.ticker)); // papier-trades meldt de papier-engine zelf
+      return await running;
+    } finally {
+      running = null;
+    }
+  }
+  async function run(opts) {
+    {
+      const open = S.getTrades().filter((t) => t.status === "open" && !t.broker && TD.marketData.source(t.ticker) && (!opts.tradeId || t.id === opts.tradeId)); // papier-trades meldt de papier-engine zelf
       const all = hitsAll();
       let changed = false;
       for (const t of open) {
         try {
-          const candles = await TD.marketData.candles(t.ticker, "15m", 300);
+          const candles = await TD.marketData.candles(t.ticker, "15m", 300, { fresh: !!opts.force });
           const found = detect(t, candles, all[t.id] || {});
           for (const h of found) {
             all[t.id] = { ...(all[t.id] || {}), [h.level]: h.time };
@@ -91,8 +100,6 @@
       }
       if (changed) S._save(KEY, all);
       lastRun = Date.now();
-    } finally {
-      running = false;
     }
   }
 

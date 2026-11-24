@@ -268,8 +268,14 @@
     return n;
   }
 
-  async function sync() {
-    if (syncing) return;
+  // opts.planIds: alleen deze papier-orders bijwerken (bijv. "Vernieuwen" op één trade).
+  let syncRun = null;
+  async function sync(opts = {}) {
+    if (syncing) return syncRun;
+    syncRun = doSync(opts);
+    return syncRun;
+  }
+  async function doSync(opts) {
     {
       const a = account();
       if (retireOrphans(a)) saveAccount(a);
@@ -282,7 +288,8 @@
       const a = account();
       const nowMin = Math.floor(Date.now() / 60000) * 60;
       const bySym = {};
-      for (const p of Object.values(a.plans)) if (p.status === "pending" || p.status === "open") (bySym[p.symbol] ||= []).push(p);
+      for (const p of Object.values(a.plans))
+        if ((p.status === "pending" || p.status === "open") && (!opts.planIds || opts.planIds.includes(p.id))) (bySym[p.symbol] ||= []).push(p);
       for (const [sym, plans] of Object.entries(bySym)) {
         const from = Math.min(...plans.map((p) => p.lastCandle)) - 60;
         let candles;
