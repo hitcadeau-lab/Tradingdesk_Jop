@@ -456,3 +456,8 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 /* Mobiele meldingen */
 .push-topic input { flex: 1; min-width: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .push-opts .chk { display: block; margin: 4px 0; }
+/* Tekenen in de grafiek van het tradeformulier */
+.draw-bar { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0 4px; align-items: center; }
+.draw-bar .btn.active { background: rgba(41, 98, 255, .25); border-color: var(--accent); color: var(--text); }
+.draw-bar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
+.draw-hint { margin: 2px 0 8px; min-height: 1.2em; }

@@ -179,7 +179,7 @@
   }
 
   // ---------------- Plan & marktbeeld ----------------
-  const PLAN_KEYS = ["direction", "entry", "stopLoss", "tp1", "tp2", "tp3", "rangeHigh", "rangeLow", "rangeTf", "trigger", "setup", "riskPct"];
+  const PLAN_KEYS = ["direction", "entry", "stopLoss", "tp1", "tp2", "tp3", "rangeHigh", "rangeLow", "rangeFrom", "rangeTo", "rangeTf", "trigger", "setup", "riskPct"];
   function makePlan(o, riskAmount) {
     const plan = { placedAt: new Date().toISOString(), riskAmount, currency: S.getSettings().currency };
     for (const k of PLAN_KEYS) plan[k] = o[k] ?? null;
@@ -239,14 +239,23 @@
     line(pl.tp2, "#26a69a", "TP2");
     line(pl.tp3, "#26a69a", "TP3");
     const last = data[data.length - 1];
-    if (last) series.setMarkers([{ time: last.time, position: pl.direction === "Short" ? "aboveBar" : "belowBar", color: "#2962ff", shape: pl.direction === "Short" ? "arrowDown" : "arrowUp", text: "Geplaatst" }]);
+    const marks = [];
+    // Getekende range: begin en einde van de push.
+    if (pl.rangeFrom && pl.rangeTo && TD.chartDraw) {
+      const a = TD.chartDraw.candleOf(data, pl.rangeFrom), b = TD.chartDraw.candleOf(data, pl.rangeTo);
+      if (a) marks.push({ time: a.time, position: "belowBar", color: "#8b919c", shape: "circle", text: "Begin" });
+      if (b && (!a || b.time !== a.time)) marks.push({ time: b.time, position: "aboveBar", color: "#8b919c", shape: "circle", text: "Einde" });
+    }
+    if (last) marks.push({ time: last.time, position: pl.direction === "Short" ? "aboveBar" : "belowBar", color: "#2962ff", shape: pl.direction === "Short" ? "arrowDown" : "arrowUp", text: "Geplaatst" });
+    marks.sort((a, b) => a.time - b.time);
+    series.setMarkers(marks);
     chart.timeScale().fitContent();
     snapCleanup = () => chart.remove();
   }
 
   // ---------------- Live chart in het formulier ----------------
   // Laadt candles bij een ander pair/timeframe; de lijnen worden bij elke invoer bijgewerkt.
-  function liveChart(el, titleEl, msgEl) {
+  function liveChart(el, titleEl, msgEl, draw) {
     let chart = null, series = null, lines = [], key = null, loading = null, timer = null, last = null;
     const LC = window.LightweightCharts;
     function clearLines() {
@@ -289,9 +298,11 @@
           localization: { locale: "nl-NL" },
         });
         series = chart.addCandlestickSeries({ upColor: "#26a69a", downColor: "#ef5350", wickUpColor: "#26a69a", wickDownColor: "#ef5350", borderVisible: false });
-        series.setData(candles.slice(-200).map((c) => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close })));
+        const data = candles.slice(-200).map((c) => ({ time: c.time, open: c.open, high: c.high, low: c.low, close: c.close }));
+        series.setData(data);
         lines = [];
         key = k;
+        if (draw) draw.bind(chart, series, data);
         el.hidden = false;
         titleEl.textContent = `(${shortSym(ticker)} · ${TD.marketData.TF[tf].label})`;
         if (last) drawLines(last);
@@ -322,6 +333,7 @@
       },
       destroy() {
         clearTimeout(timer);
+        if (draw) draw.destroy();
         if (chart) chart.remove();
         chart = null;
       },
@@ -477,9 +489,18 @@
             </div>
           </div>
           <div class="form-chart-wrap">
-            <div class="label">Chart met je levels <span class="muted" id="form-chart-title"></span></div>
+            <div class="row gap between">
+              <div class="label">Chart met je levels <span class="muted" id="form-chart-title"></span></div>
+              <span class="view-toggle" role="group" aria-label="Timeframe">${["15m", "1H", "4H"]
+                .map((tf) => `<button type="button" data-ctf="${tf}" class="${(t.rangeTf || "1H") === tf ? "active" : ""}">${tf}</button>`)
+                .join("")}</span>
+            </div>
+            <div class="draw-bar" id="draw-bar"></div>
+            <p class="muted small draw-hint" id="draw-hint">Teken je range en levels in de grafiek: kies hierboven wat je wilt zetten en klik op de prijs. Sleep een lijn om hem te verplaatsen.</p>
             <div id="form-chart" class="snap-chart"></div>
             <p class="muted small" id="form-chart-msg" hidden></p>
+            <input type="hidden" name="rangeFrom" value="${esc(t.rangeFrom ?? "")}">
+            <input type="hidden" name="rangeTo" value="${esc(t.rangeTo ?? "")}">
           </div>
         </section>
 
@@ -531,7 +552,29 @@
     const form = root.querySelector("#trade-form");
     let drawing = t.drawing || null;
     teardown();
-    const live = window.LightweightCharts ? liveChart(root.querySelector("#form-chart"), root.querySelector("#form-chart-title"), root.querySelector("#form-chart-msg")) : null;
+    // Tekenen in de grafiek: zet de velden van het formulier, alsof je ze zelf intypt.
+    const DRAW_FIELDS = ["rangeHigh", "rangeLow", "entry", "stopLoss", "tp1", "tp2", "tp3", "rangeFrom", "rangeTo", "direction"];
+    const draw =
+      window.LightweightCharts && TD.chartDraw
+        ? TD.chartDraw.create({
+            el: root.querySelector("#form-chart"),
+            toolbar: root.querySelector("#draw-bar"),
+            get() {
+              const v = {};
+              for (const k of DRAW_FIELDS) v[k] = form[k] ? form[k].value : "";
+              return v;
+            },
+            set(patch) {
+              for (const [k, v] of Object.entries(patch)) if (form[k]) form[k].value = v === null || v === undefined ? "" : v;
+              form.dispatchEvent(new Event("input", { bubbles: true }));
+            },
+            hint(text) {
+              root.querySelector("#draw-hint").textContent = text;
+            },
+          })
+        : null;
+    if (!draw) root.querySelector("#draw-bar").hidden = true;
+    const live = window.LightweightCharts ? liveChart(root.querySelector("#form-chart"), root.querySelector("#form-chart-title"), root.querySelector("#form-chart-msg"), draw) : null;
     if (live) snapCleanup = () => live.destroy();
 
     // ----- checklist live status -----
@@ -571,7 +614,7 @@
       const fd = new FormData(form);
       const o = { ...t };
       for (const [k, v] of fd.entries()) o[k] = typeof v === "string" ? v.trim() : v;
-      for (const k of ["entry", "stopLoss", "tp1", "tp2", "tp3", "riskPct", "pnl", "rangeHigh", "rangeLow"]) o[k] = o[k] === "" || o[k] === undefined ? null : +o[k];
+      for (const k of ["entry", "stopLoss", "tp1", "tp2", "tp3", "riskPct", "pnl", "rangeHigh", "rangeLow", "rangeFrom", "rangeTo"]) o[k] = o[k] === "" || o[k] === undefined ? null : +o[k];
       o.ticker = (o.ticker || "").toUpperCase().replace(/\s+/g, "");
       const w = wl.find((x) => x.symbol === o.ticker);
       o.market = w ? w.market : o.market || (/USDT?$|BTC$|PERP/.test(o.ticker) ? "crypto" : "stock");
@@ -676,6 +719,16 @@
       paintCalc();
       paintExchange();
     });
+    // Timeframe-knoppen boven de grafiek = het range-timeframe van je trade.
+    const paintCtf = () => root.querySelectorAll("[data-ctf]").forEach((b) => b.classList.toggle("active", b.dataset.ctf === (form.rangeTf.value || "1H")));
+    root.querySelectorAll("[data-ctf]").forEach((b) =>
+      b.addEventListener("click", () => {
+        form.rangeTf.value = b.dataset.ctf;
+        form.dispatchEvent(new Event("change", { bubbles: true }));
+        paintCtf();
+      })
+    );
+    form.rangeTf.addEventListener("change", paintCtf);
     form.addEventListener("change", (e) => {
       if (e.target.name === "status") {
         const closed = e.target.value === "closed";
