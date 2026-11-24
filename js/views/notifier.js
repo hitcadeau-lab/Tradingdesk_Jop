@@ -234,7 +234,7 @@
       const wl2 = S.getWatchlist();
       if (!wl2.some((w) => w.symbol === sym)) S.setWatchlist([...wl2, found]);
       const pairs = N.getConfig().pairs.filter((p) => p.symbol !== sym);
-      N.setConfig({ pairs: [...pairs, { symbol: sym, tfs: ["1h", "4h"] }] });
+      N.setConfig({ pairs: [...pairs, { symbol: sym, tfs: ["15m", "1h", "4h"] }] });
       N.scan();
     });
     root.querySelector("#n-enabled").addEventListener("change", (e) => {

@@ -97,11 +97,11 @@ window.TD = window.TD || {};
     // Opnieuw als er (bijv. na het terugzetten van een oude back-up) weer niet-Kraken-pairs in de watchlist staan.
     const wl = S._load("td.watchlist", null);
     const stale = Array.isArray(wl) && wl.some((w) => !isKraken(w.symbol));
-    if (S._load("td.migr.kraken", false) && !stale) return false;
+    if (S._load("td.migr.kraken", false) && !stale) return addTf15(S);
     S.setWatchlist(defaultWatchlist());
     // Notifier: alle markten volgen. Timeframes die je al had (bijv. 15m op SOL) blijven staan.
     const cfg = S._load("td.notifier", null) || {};
-    const map = new Map(LIST.map((m) => [ticker(m.sym), { symbol: ticker(m.sym), tfs: ["1h", "4h"] }]));
+    const map = new Map(LIST.map((m) => [ticker(m.sym), { symbol: ticker(m.sym), tfs: ["15m", "1h", "4h"] }]));
     for (const p of cfg.pairs || []) {
       const e = map.get(canonical(p.symbol));
       if (e && Array.isArray(p.tfs) && p.tfs.length) e.tfs = [...new Set([...e.tfs, ...p.tfs])].sort((a, b) => ["15m", "1h", "4h"].indexOf(a) - ["15m", "1h", "4h"].indexOf(b));
@@ -114,6 +114,24 @@ window.TD = window.TD || {};
       S._save("td.signals", sigs);
     }
     S._save("td.migr.kraken", true);
+    S._save("td.migr.kraken15", true);
+    return true;
+  }
+
+  // Eenmalig: 15m erbij voor alle vaste markten in de Notifier (naast 1H en 4H).
+  function addTf15(S) {
+    if (S._load("td.migr.kraken15", false)) return false;
+    const cfg = S._load("td.notifier", null) || {};
+    const pairs = Array.isArray(cfg.pairs) ? cfg.pairs : [];
+    const order = ["15m", "1h", "4h"];
+    for (const m of LIST) {
+      const t = ticker(m.sym);
+      const p = pairs.find((x) => x.symbol === t);
+      if (p) p.tfs = [...new Set(["15m", ...(p.tfs || [])])].sort((a, b) => order.indexOf(a) - order.indexOf(b));
+      else pairs.push({ symbol: t, tfs: order.slice() });
+    }
+    S._save("td.notifier", { ...cfg, pairs });
+    S._save("td.migr.kraken15", true);
     return true;
   }
 

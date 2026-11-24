@@ -24,7 +24,7 @@
   }
 
   function defaultPairs() {
-    return S.getWatchlist().map((w) => ({ symbol: w.symbol, tfs: ["1h", "4h"] }));
+    return S.getWatchlist().map((w) => ({ symbol: w.symbol, tfs: ["15m", "1h", "4h"] }));
   }
 
   function getConfig() {
