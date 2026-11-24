@@ -242,8 +242,38 @@
   }
 
   // ---------- live bijhouden ----------
+  // Een papier-order zonder open journal-trade (handmatig gesloten of verwijderd) stopt stil:
+  // geen meldingen meer en de marge komt vrij. Het journal blijft zoals je het invulde.
+  function orphaned(plan) {
+    const tr = plan.tradeId && S.getTrade(plan.tradeId);
+    return !tr || tr.status === "closed";
+  }
+  function retireOrphans(a) {
+    let n = 0;
+    const t = Math.floor(Date.now() / 1000);
+    for (const plan of Object.values(a.plans)) {
+      if ((plan.status !== "pending" && plan.status !== "open") || !orphaned(plan)) continue;
+      if (plan.status === "open") {
+        const price = plan.lastPrice || plan.avgEntry;
+        reduce(a, plan, "close", price, plan.remaining, t, "taker", `Journal-trade gesloten of verwijderd: positie gesloten @ ${price}`);
+        plan.status = "closed";
+      } else {
+        event(plan, "cancel", t, null, 0, 0, 0, "Journal-trade gesloten of verwijderd: order geannuleerd");
+        plan.status = "cancelled";
+      }
+      plan.closedAt = t;
+      plan.closeReason = "journal";
+      n++;
+    }
+    return n;
+  }
+
   async function sync() {
     if (syncing) return;
+    {
+      const a = account();
+      if (retireOrphans(a)) saveAccount(a);
+    }
     const a0 = account();
     const active = Object.values(a0.plans).filter((p) => p.status === "pending" || p.status === "open");
     if (!active.length) return;
@@ -365,5 +395,5 @@
     }
   }
 
-  TD.paper = { account, setConfig, reset, preview, place, sync, step, liqPrice, closeMarket, cancel, stopToBreakEven, planForTrade, unrealized, summary, start, onChange };
+  TD.paper = { orphaned, retireOrphans, account, setConfig, reset, preview, place, sync, step, liqPrice, closeMarket, cancel, stopToBreakEven, planForTrade, unrealized, summary, start, onChange };
 })(window.TD);

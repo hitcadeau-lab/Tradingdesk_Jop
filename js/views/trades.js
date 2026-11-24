@@ -877,7 +877,7 @@
         <section class="panel">
           <h2>Trade</h2>
           <dl class="dl">
-            <dt>Pair</dt><dd>${esc(t.ticker)}</dd>
+            <dt>Pair</dt><dd><a href="#/markt/${encodeURIComponent(t.ticker)}" title="Open ${esc(t.ticker)} in Markt">${esc(t.ticker)}</a></dd>
             <dt>Trade type</dt><dd>${esc(t.tradeType)}</dd>
             <dt>Entry datum</dt><dd>${date(t.entryDate, true)}</dd>
             <dt>Exit datum</dt><dd>${date(t.exitDate, true)}</dd>
@@ -910,7 +910,10 @@
           <div class="plan-grid">
             <div>${TD.levelsViz.html({ ...(t.plan || t), riskAmount: t.plan ? t.plan.riskAmount : risk, currency: t.plan ? t.plan.currency : S.getSettings().currency })}</div>
             <div>
-              <div class="label">Marktbeeld bij het plaatsen ${t.snapshot ? `<span class="muted">(${esc(t.plan?.rangeTf || t.snapshot.tf)}, ${date(t.snapshot.takenAt, true)})</span>` : ""}</div>
+              <div class="label row gap between">
+                <span>Marktbeeld bij het plaatsen ${t.snapshot ? `<span class="muted">(${esc(t.plan?.rangeTf || t.snapshot.tf)}, ${date(t.snapshot.takenAt, true)})</span>` : ""}</span>
+                <a class="btn small" href="#/markt/${encodeURIComponent(t.ticker)}${t.snapshot && ["1h", "4h"].includes(t.snapshot.tf) ? "?view=" + t.snapshot.tf : ""}">Actuele ${esc(shortSym(t.ticker))} in Markt →</a>
+              </div>
               ${t.snapshot ? `<div id="snap-chart" class="snap-chart"></div>` : `<p class="muted">Geen marktbeeld vastgelegd${t.plan ? " (geen koersdata beschikbaar op dat moment)" : " (trade van vóór deze functie)"}.</p>`}
               <dl class="dl plan-meta">
                 <dt>Trigger</dt><dd>${esc((t.plan || t).trigger || "—")}</dd>

@@ -17,7 +17,15 @@
   } catch {}
   let rangeCleanup = null;
 
-  function render(root, params) {
+  function render(root, params, query) {
+    // ?view=1h / 4h / tv: open meteen in die grafiekweergave (bijv. vanaf een trade).
+    const v = query && query.get && query.get("view");
+    if (v && ["tv", "1h", "4h"].includes(v)) {
+      chartMode = v;
+      try {
+        localStorage.setItem("td.chartMode", v);
+      } catch {}
+    }
     const wl = S.getWatchlist();
     const selected = params.symbol || (wl[0] && wl[0].symbol) || null;
 
