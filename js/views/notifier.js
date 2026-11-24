@@ -20,6 +20,9 @@
     ({
       trigger: '<span class="badge pos">Trigger</span>',
       reclaim: '<span class="badge warn">Reclaim · wacht op retest</span>',
+      accepted: '<span class="badge warn">Breakout · wacht op retest</span>',
+      failed: '<span class="badge muted">Breakout mislukt</span>',
+      planned: '<span class="badge muted">Plan</span>',
       expired: '<span class="badge muted">Verlopen</span>',
       invalid: '<span class="badge muted">Vervallen</span>',
       untradeable: '<span class="badge neg">Niet tradeable</span>',
@@ -39,10 +42,10 @@
     const perm = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
 
     const rows = signals.length
-      ? `<table class="table clickable"><thead><tr><th>Tijd</th><th>Melding</th><th>Status</th><th class="num">Entry</th><th class="num">SL</th><th class="num">TP1 (mid)</th><th class="num">R:R</th></tr></thead><tbody>
+      ? `<table class="table clickable"><thead><tr><th>Tijd</th><th>Melding</th><th>Status</th><th class="num">Entry</th><th class="num">SL</th><th class="num">TP1</th><th class="num">R:R</th></tr></thead><tbody>
         ${signals
           .map(
-            (s) => `<tr data-href="#/notifier/${encodeURIComponent(s.id)}" class="${!s.seen && ["reclaim", "trigger"].includes(s.status) ? "unseen" : ""}">
+            (s) => `<tr data-href="#/notifier/${encodeURIComponent(s.id)}" class="${!s.seen && ["reclaim", "accepted", "trigger"].includes(s.status) ? "unseen" : ""}">
             <td>${date(s.detectedAt, true)}</td>
             <td><strong>${esc(N.title(s))}</strong></td>
             <td>${statusBadge(s.status)}</td>
@@ -50,7 +53,7 @@
             <td class="num">${s.rr1.toFixed(1)}</td></tr>`
           )
           .join("")}</tbody></table>`
-      : `<div class="empty">Nog geen meldingen. Zodra er bij een gevolgd pair een deviatie + reclaim te zien is, verschijnt hij hier${cfg.desktop ? " en krijg je een melding op je Mac" : ""}.</div>`;
+      : `<div class="empty">Nog geen meldingen. Zodra er bij een gevolgd pair een deviatie + reclaim of een breakout met acceptatie te zien is, verschijnt hij hier${cfg.desktop ? " en krijg je een melding op je Mac" : ""}.</div>`;
 
     const pairRows = symbols
       .map((sym) => {
@@ -70,16 +73,21 @@
       .map(({ p, tf, r }) => {
         let txt = '<span class="muted">Nog niet gescand</span>';
         let since = "—", setupAt = "—";
+        const bo = r && r.breakout ? ` · <span class="nowrap">Breakout ${esc(r.breakout.signal.direction.toLowerCase())}: ${statusBadge(r.breakout.signal.status)}</span>` : "";
         if (r && r.error) txt = `<span class="neg">${esc(r.error)}</span>`;
-        else if (r && !r.range) txt = '<span class="muted">Geen geldige range (trend of uitbraak)</span>';
+        else if (r && !r.range) txt = `<span class="muted">Geen geldige range (trend of uitbraak)</span>${bo}`;
         else if (r && r.range) {
           const d = r.range.distribution;
-          txt = `Range ${price(r.range.low)} – ${price(r.range.high)} · mid ${price(r.range.mid)} · verdeling ${Math.round(d.lower * 100)}/${Math.round(d.upper * 100)} · ${r.signal ? statusBadge(r.signal.status) : '<span class="muted">geen setup</span>'}`;
+          txt = `Range ${price(r.range.low)} – ${price(r.range.high)} · mid ${price(r.range.mid)} · verdeling ${Math.round(d.lower * 100)}/${Math.round(d.upper * 100)} · ${r.signal ? statusBadge(r.signal.status) : '<span class="muted">geen setup</span>'}${bo}`;
           since = stamp(r.range.startTime * 1000);
           if (r.signal) {
             const g = r.signal;
             setupAt = g.retestTime ? `Retest ${stamp(g.retestTime * 1000)}` : `Reclaim ${stamp(g.reclaimTime * 1000)}`;
           }
+        }
+        if (r && !r.error && !(r.range && r.signal) && r.breakout) {
+          const g = r.breakout.signal;
+          setupAt = g.retestTime ? `Retest ${stamp(g.retestTime * 1000)}` : `Breakout ${stamp(g.breakoutTime * 1000)}`;
         }
         return `<tr data-href="#/notifier/range?symbol=${encodeURIComponent(p.symbol)}&tf=${tf}"><td><strong>${esc(shortSym(p.symbol))}</strong></td><td>${M.TF[tf].label}</td><td class="wrap">${txt}</td>
           <td class="ts">${since}</td><td class="ts">${setupAt}</td><td class="ts">${r && r.lastTime ? stamp(r.lastTime * 1000) : "—"}</td><td class="ts">${r ? time(r.at) : "—"}</td></tr>`;
@@ -142,7 +150,8 @@
           <ol class="steps small">
             <li>Range: begin tot einde van de laatste push of dump, mid op 50%. De koers moet daarna in de range blijven en terugkomen.</li>
             <li>Setup: een candle sluit buiten de range (deviatie) en daarna weer binnen (reclaim). <strong>Reclaim</strong> = wacht op retest, <strong>Trigger</strong> = retest houdt.</li>
-            <li>Geen melding bij een te diepe deviatie (stop te ver van TP1), een R:R onder 1, of als de koers al bij de mid is.</li>
+            <li>Breakout: minstens 6 candles sluiten op rij buiten de range (acceptatie). <strong>Breakout · wacht op retest</strong> = nog niet instappen, <strong>Trigger</strong> = de oude rand houdt bij de retest (level flip). SL terug binnen de oude range, TP1 = halve range-hoogte, TP2 = hele range-hoogte voorbij de rand. Sluit de koers weer in de range, dan is de breakout mislukt.</li>
+            <li>Geen melding bij een te diepe deviatie (stop te ver van TP1), een R:R onder 1, of als de koers al bij TP1 is (een breakout ga je niet najagen).</li>
             <li>Gescand wordt zolang de app open is (mag geminimaliseerd).</li>
           </ol>
           <p class="muted small">Dit is een hulpmiddel, geen advies: controleer de range, de mid en je checklist altijd zelf.</p>
@@ -248,7 +257,20 @@
     const signal = res.signal;
     const lv = (label, v, extra = "") => `<dt>${label}</dt><dd>${v === null || v === undefined ? "—" : num(v, 8)}${extra}</dd>`;
 
-    root.querySelector("#d-levels").innerHTML = signal
+    const isBO = signal && signal.setup === "Breakout";
+    root.querySelector("#d-levels").innerHTML = isBO
+      ? `<h2>Setup <span class="badge warn">Breakout</span></h2><dl class="dl">
+          <dt>Richting</dt><dd><span class="dir ${signal.direction === "Long" ? "pos" : "neg"}">${esc(signal.direction)}</span></dd>
+          ${lv("Entry", signal.entry, signal.retestTime ? " <span class='muted'>(slot na de retest)</span>" : " <span class='muted'>(limit op de retest van de oude rand)</span>")}
+          ${lv("Stoploss", signal.stopLoss, " <span class='muted'>(terug binnen de oude range)</span>")}
+          ${lv("TP1", signal.tp1, ` <span class='muted'>(½ range · ${signal.rr1.toFixed(2)}R)</span>`)}
+          ${lv("TP2", signal.tp2, ` <span class='muted'>(hele range, nieuwe range · ${signal.rr2.toFixed(2)}R)</span>`)}
+          ${signal.acceptBars != null ? `<dt>Acceptatie</dt><dd>${signal.acceptBars} closes op rij buiten de range</dd>` : ""}
+          ${signal.extension != null ? `<dt>Verst uitgelopen</dt><dd>${Math.round(signal.extension * 100)}% van de range-hoogte</dd>` : ""}
+          ${signal.retestDepth != null ? `<dt>Retest-diepte</dt><dd>${Math.round(signal.retestDepth * 100)}% terug in de range</dd>` : ""}
+        </dl>
+        <p class="muted small">Breakouts mislukken vaker dan range-trades. Speel kleiner en houd je stop strikt.</p>`
+      : signal
       ? `<h2>Setup</h2><dl class="dl">
           <dt>Richting</dt><dd><span class="dir ${signal.direction === "Long" ? "pos" : "neg"}">${esc(signal.direction)}</span></dd>
           ${lv("Entry", signal.entry, signal.retestTime ? " <span class='muted'>(slot na retest)</span>" : " <span class='muted'>(limit op de retest)</span>")}
@@ -258,6 +280,9 @@
           ${signal.depth != null ? `<dt>Deviatie-diepte</dt><dd>${Math.round(signal.depth * 100)}% van de range</dd>` : ""}
         </dl>`
       : `<h2>Setup</h2><p class="muted">${range ? "Op dit moment geen deviatie + reclaim bij deze range." : "Geen geldige range gevonden: de markt trendt of is uitgebroken."}</p>`;
+    // Range-setup in beeld, maar ook een breakout gevonden? Dan een verwijzing.
+    if (!sig && res.breakout && signal !== res.breakout.signal)
+      root.querySelector("#d-levels").insertAdjacentHTML("beforeend", `<p class="small">Ook gevonden: <strong>breakout ${esc(res.breakout.signal.direction.toLowerCase())}</strong> ${statusBadge(res.breakout.signal.status)} uit de range ${price(res.breakout.range.low)} – ${price(res.breakout.range.high)}.</p>`);
 
     root.querySelector("#d-range").innerHTML = range
       ? `<h2>Range</h2><dl class="dl">
@@ -288,7 +313,8 @@
     if (range) {
       const tradeQ = (g) =>
         new URLSearchParams({
-          ticker: sym, direction: g.direction, setup: "Reclaim", trigger: "Deviatie + reclaim + retest", rangeTf: N.tfLabel(frame),
+          ticker: sym, direction: g.direction, setup: g.setup === "Breakout" ? "Breakout" : "Reclaim",
+          trigger: g.setup === "Breakout" ? "Breakout + retest" : "Deviatie + reclaim + retest", rangeTf: N.tfLabel(frame),
           rangeHigh: +range.high.toPrecision(10), rangeLow: +range.low.toPrecision(10), entry: +g.entry.toPrecision(10),
           stopLoss: +g.stopLoss.toPrecision(10), tp1: +g.tp1.toPrecision(10), tp2: +g.tp2.toPrecision(10),
         });
@@ -297,9 +323,11 @@
         <div class="menu-wrap">
           <button class="btn primary" id="d-advise" aria-haspopup="true">Get advise ▾</button>
           <div class="menu" id="d-menu" hidden>
-            ${signal ? `<button data-adv="current">Huidige setup: ${esc(signal.direction)} <span class="muted">(${esc(signal.status === "trigger" ? "trigger" : signal.status === "reclaim" ? "reclaim" : signal.status)})</span></button>` : ""}
+            ${signal ? `<button data-adv="current">Huidige setup: ${esc(signal.direction)}${isBO ? " breakout" : ""} <span class="muted">(${esc(signal.status)})</span></button>` : ""}
             <button data-adv="Long">Plan: Long bij de range low</button>
             <button data-adv="Short">Plan: Short bij de range high</button>
+            <button data-adv="BO-Long">Plan: Breakout long boven de range high</button>
+            <button data-adv="BO-Short">Plan: Breakout short onder de range low</button>
           </div>
         </div>
         ${signal ? `<a class="btn" href="#/trades/new?${tradeQ(signal)}">Trade plaatsen</a>` : ""}`;
@@ -315,7 +343,7 @@
           menu.hidden = true;
           const kind = b.dataset.adv;
           if (kind === "current") return makeAdvice(btn, sig || { symbol: sym, tf: frame, ...signal, range, id: null });
-          const plan = E.planSetup(range, kind);
+          const plan = kind.startsWith("BO-") ? E.planBreakout(range, kind.slice(3)) : E.planSetup(range, kind);
           makeAdvice(btn, { symbol: sym, tf: frame, ...plan, range, id: null });
         })
       );
@@ -327,21 +355,29 @@
       box.innerHTML = `<h2>Historische setups <span class="muted small">— zoals de Notifier ze destijds had gezien</span></h2>
         ${
           hist.length
-            ? `<table class="table"><thead><tr><th>Moment</th><th>Richting</th><th>Status toen</th><th class="num">Entry</th><th class="num">SL</th><th class="num">TP1</th><th class="num">R:R</th><th>Daarna</th><th></th></tr></thead><tbody>
+            ? `<table class="table"><thead><tr><th>Moment</th><th>Setup</th><th>Richting</th><th>Status toen</th><th class="num">Entry</th><th class="num">SL</th><th class="num">TP1</th><th class="num">R:R</th><th>Daarna</th><th></th></tr></thead><tbody>
               ${hist
                 .map(
                   (h, i) => `<tr>
                   <td>${date(h.atTime * 1000, true)}</td>
+                  <td>${esc(h.signal.setup || "Reclaim")}</td>
                   <td><span class="dir ${h.signal.direction === "Long" ? "pos" : "neg"}">${esc(h.signal.direction)}</span></td>
                   <td>${statusBadge(h.signal.status)}</td>
                   <td class="num">${num(h.signal.entry, 6)}</td><td class="num">${num(h.signal.stopLoss, 6)}</td><td class="num">${num(h.signal.tp1, 6)}</td>
                   <td class="num">${h.signal.rr1.toFixed(1)}</td>
-                  <td>${outTxt[h.outcome.result]}</td>
+                  <td>${h.signal.status === "trigger" ? outTxt[h.outcome.result] : `<span class="muted small" title="Zonder trigger had je deze setup niet gespeeld">geen trigger · ${esc({ sl: "SL", tp1: "TP1", tp2: "TP2", open: "open" }[h.outcome.result])}</span>`}</td>
                   <td><button class="btn small" data-hist="${i}">Get advise</button></td></tr>`
                 )
                 .join("")}</tbody></table>
-              <p class="muted small">${hist.filter((h) => h.outcome.result === "tp1" || h.outcome.result === "tp2").length} van ${hist.filter((h) => h.outcome.result !== "open").length} afgeronde setups haalden TP1 vóór de stop. Het advies van een historische setup kijkt alleen naar de candles van vóór dat moment.</p>`
-            : `<p class="muted">In de geladen periode (laatste 300 candles) zijn geen deviatie + reclaim-setups gevonden.</p>`
+              <p class="muted small">${["Reclaim", "Breakout"]
+                .map((k) => {
+                  // Alleen setups met een trigger: alleen die had je echt kunnen spelen.
+                  const done = hist.filter((h) => (h.signal.setup || "Reclaim") === k && h.signal.status === "trigger" && h.outcome.result !== "open");
+                  return done.length ? `${k}: ${done.filter((h) => h.outcome.result === "tp1" || h.outcome.result === "tp2").length} van ${done.length} afgeronde triggers haalden TP1 vóór de stop.` : "";
+                })
+                .filter(Boolean)
+                .join(" ")} Het advies van een historische setup kijkt alleen naar de candles van vóór dat moment.</p>`
+            : `<p class="muted">In de geladen periode (laatste 300 candles) zijn geen reclaim- of breakout-setups gevonden.</p>`
         }`;
       box.querySelectorAll("[data-hist]").forEach((b) =>
         b.addEventListener("click", () => {

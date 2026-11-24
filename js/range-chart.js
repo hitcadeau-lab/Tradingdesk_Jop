@@ -1,5 +1,5 @@
 // Range-grafiek met TradingView Lightweight Charts™: candles + range high / mid / range low,
-// en markeringen voor het begin en einde van de push, de deviatie, de reclaim en de retest.
+// en markeringen voor het begin en einde van de push, de deviatie, de reclaim, de breakout en de retest.
 (function (TD) {
   const COL = { up: "#26a69a", down: "#ef5350", rh: "#ef5350", mid: "#f5a623", rl: "#26a69a", entry: "#2962ff", sl: "#ef5350", text: "#8b919c", grid: "#1f232c", bg: "#0f1115" };
 
@@ -48,7 +48,14 @@
         const long = signal.direction === "Long";
         if (signal.deviationTime) markers.push({ time: signal.deviationTime, position: long ? "belowBar" : "aboveBar", color: COL.mid, shape: long ? "arrowUp" : "arrowDown", text: "Deviatie" });
         if (signal.reclaimTime) markers.push({ time: signal.reclaimTime, position: long ? "belowBar" : "aboveBar", color: COL.entry, shape: long ? "arrowUp" : "arrowDown", text: "Reclaim" });
+        if (signal.breakoutTime) markers.push({ time: signal.breakoutTime, position: long ? "aboveBar" : "belowBar", color: COL.mid, shape: long ? "arrowUp" : "arrowDown", text: "Breakout" });
+        if (signal.acceptTime && signal.acceptTime !== signal.breakoutTime) markers.push({ time: signal.acceptTime, position: long ? "aboveBar" : "belowBar", color: COL.text, shape: "circle", text: "Acceptatie" });
         if (signal.retestTime) markers.push({ time: signal.retestTime, position: long ? "belowBar" : "aboveBar", color: COL.up, shape: long ? "arrowUp" : "arrowDown", text: "Retest" });
+        // Bij een breakout liggen de targets buiten de range: teken ze als lijn.
+        if (signal.setup === "Breakout") {
+          series.createPriceLine({ price: signal.tp1, color: COL.mid, lineWidth: 1, lineStyle: LC.LineStyle.Dotted, axisLabelVisible: true, title: "TP1" });
+          series.createPriceLine({ price: signal.tp2, color: COL.up, lineWidth: 1, lineStyle: LC.LineStyle.Dotted, axisLabelVisible: true, title: "TP2 (nieuwe range)" });
+        }
         series.createPriceLine({ price: signal.stopLoss, color: COL.sl, lineWidth: 1, lineStyle: LC.LineStyle.Solid, axisLabelVisible: true, title: "SL" });
         series.createPriceLine({ price: signal.entry, color: COL.entry, lineWidth: 1, lineStyle: LC.LineStyle.Solid, axisLabelVisible: true, title: "Entry" });
       }
@@ -63,9 +70,12 @@
   async function render(el, symbol, tf, opts = {}) {
     el.innerHTML = `<p class="muted pad">Koersdata laden…</p>`;
     const candles = await TD.marketData.candles(symbol, tf, opts.limit || 300);
-    const { range, signal } = opts.analysis || TD.rangeEngine.analyze(candles);
+    const a = opts.analysis || TD.rangeEngine.analyze(candles);
+    let { range, signal } = a;
+    // Geen geldige range meer, wel een breakout? Toon dan de oude range met de breakout.
+    if (!opts.analysis && !range && a.breakout) ({ range, signal } = a.breakout);
     const cleanup = mount(el, candles, range, signal, opts);
-    return { candles, range, signal, cleanup };
+    return { candles, range, signal, breakout: a.breakout || null, cleanup };
   }
 
   TD.rangeChart = { mount, render, available };

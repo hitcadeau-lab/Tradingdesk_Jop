@@ -173,6 +173,144 @@
     return { checks, verdict };
   }
 
+  // ---------- beoordeling van een breakout ----------
+  // Breakouts mislukken vaker dan range-trades (vaak blijkt de uitbraak een deviatie). Daarom
+  // strengere eisen: een sterke range, echte acceptatie, een retest die houdt, ruimte tot de
+  // targets, de trend mee en meer R:R. Eén punt van aandacht = al "Twijfel".
+  function assessBreakout(m, signal, tf, candles, range) {
+    const long = signal.direction === "Long";
+    const edgeName = long ? "range high" : "range low";
+    const h = range.high - range.low;
+    const edge = long ? range.high : range.low;
+    const sgn = long ? 1 : -1;
+    const checks = [];
+    const add = (id, label, state, text) => checks.push({ id, label, state, text });
+    const planned = signal.status === "planned";
+
+    const touches = m.touchesHigh + m.touchesLow;
+    const edgeTests = long ? m.touchesHigh : m.touchesLow;
+    add(
+      "structure",
+      "De range vóór de uitbraak",
+      m.bars >= 15 && touches >= 4 ? "pass" : m.bars >= 8 ? "warn" : "fail",
+      `${m.bars} candles in de range, ${edgeTests}× bij de ${edgeName}. ${
+        m.bars >= 15 && touches >= 4
+          ? "Een goed ontwikkelde range: een uitbraak daaruit zegt meer en de oude rand is een duidelijk level voor de retest."
+          : "Een jonge range: een uitbraak uit een zwakke structuur is minder betrouwbaar."
+      }`
+    );
+    if (planned)
+      add("accept", "Acceptatie", "info", `Nog geen uitbraak. Wacht tot minstens 6 candles op rij buiten de ${edgeName} sluiten. Eén candle of een lont erdoor is nog een deviatie.`);
+    else
+      add(
+        "accept",
+        "Acceptatie buiten de range",
+        signal.acceptBars >= 8 ? "pass" : "warn",
+        `${signal.acceptBars} closes op rij buiten de ${edgeName}. ${
+          signal.acceptBars >= 8 ? "Duidelijke acceptatie: de markt aanvaardt de nieuwe prijzen." : "Net genoeg acceptatie. Hoe langer de koers buiten blijft, hoe kleiner de kans dat het toch een deviatie is."
+        }`
+      );
+    add(
+      "trigger",
+      "Trigger (retest)",
+      signal.status === "trigger" ? "pass" : signal.status === "accepted" || planned ? "warn" : "fail",
+      signal.status === "trigger"
+        ? `De koers kwam terug naar de oude ${edgeName} en die hield (level flip). Dit is je instapmoment.`
+        : signal.status === "accepted" || planned
+        ? `Nog geen retest. Jaag de uitbraak niet na: zet een limit order op de oude ${edgeName} en stap alleen in als die houdt.`
+        : signal.reason || "Geen geldige trigger meer."
+    );
+    if (signal.retestDepth != null)
+      add(
+        "retest",
+        "Retest-diepte",
+        signal.retestDepth <= 0.03 ? "pass" : signal.retestDepth <= 0.1 ? "warn" : "fail",
+        `De retest kwam ${Math.round(signal.retestDepth * 100)}% van de range-hoogte terug in de oude range. ${
+          signal.retestDepth <= 0.03
+            ? "Het level houdt strak: precies wat je wilt zien."
+            : signal.retestDepth <= 0.1
+            ? "De lont ging terug de range in. Het level houdt nog, maar minder overtuigend."
+            : "Te diep terug in de range: dit lijkt meer op een mislukte breakout."
+        }`
+      );
+    if (signal.strength != null)
+      add(
+        "strength",
+        "Kracht van de uitbraak",
+        signal.strength >= 1.2 ? "pass" : "warn",
+        signal.strength >= 1.2
+          ? `De uitbraak-candle was ${signal.strength.toFixed(1)}× zo groot als een gemiddelde candle in de range: een duidelijke beweging.`
+          : `De uitbraak-candle was niet groter dan normaal (${signal.strength.toFixed(1)}×). Een uitbraak zonder kracht mislukt vaker.`
+      );
+
+    // Trend: de push/dump waaruit de range kwam, en de grotere beweging in de geladen data.
+    const pushDir = range.kind === "push" ? 1 : -1;
+    const ref = candles.find((c) => c.time >= range.startTime) || candles[0];
+    const ctx = Math.sign(ref.close - candles[0].close) || pushDir;
+    const withTrend = (pushDir === sgn ? 1 : 0) + (ctx === sgn ? 1 : 0);
+    add(
+      "trend",
+      "Trend",
+      withTrend === 2 ? "pass" : withTrend === 1 ? "warn" : "fail",
+      withTrend === 2
+        ? `De uitbraak gaat mee met de ${range.kind === "push" ? "push" : "dump"} waaruit de range ontstond en met de grotere beweging. Breakouts met de trend mee slagen het vaakst.`
+        : withTrend === 1
+        ? "De uitbraak gaat maar deels met de trend mee. Tegen de grotere beweging in mislukken breakouts vaker."
+        : "De uitbraak gaat tegen de trend in. Zulke breakouts mislukken vaak: grote kans dat het een deviatie is."
+    );
+
+    // Oude levels tussen de rand en de targets (swing highs/lows van vóór de range).
+    const before = candles.filter((c) => c.time < range.startTime);
+    const piv = TD.rangeEngine.pivots(before, 3);
+    const levels = (long ? piv.highs.map((i) => before[i].high) : piv.lows.map((i) => before[i].low)).filter((p) => (p - edge) * sgn > 0.05 * h);
+    const inTp1 = levels.filter((p) => (p - signal.tp1) * sgn < 0);
+    const inTp2 = levels.filter((p) => (p - signal.tp1) * sgn >= 0 && (p - signal.tp2) * sgn < 0);
+    const word = long ? "weerstand" : "support";
+    add(
+      "room",
+      "Ruimte tot de targets",
+      inTp1.length ? "warn" : "pass",
+      inTp1.length
+        ? `Oude ${word} vóór TP1 op ${inTp1.map((p) => TD.util.price(p)).slice(0, 3).join(", ")}. Daar kan de koers stokken; overweeg TP1 net daarvoor.`
+        : `Geen oude ${word} tussen de rand en TP1${inTp2.length ? `; wel op ${inTp2.map((p) => TD.util.price(p)).slice(0, 2).join(", ")} vóór TP2` : ""}.`
+    );
+    add(
+      "rr",
+      "Risk/reward",
+      signal.rr1 >= 2 ? "pass" : signal.rr1 >= 1.2 ? "warn" : "fail",
+      `TP1 (½ range): ${signal.rr1.toFixed(2)}R · TP2 (hele range): ${signal.rr2.toFixed(2)}R. ${
+        signal.rr1 >= 2
+          ? "Ruim genoeg om de lagere slagingskans van breakouts te compenseren."
+          : "Breakouts halen hun target minder vaak dan range-trades. Daarom wil je hier minstens 2R tot TP1."
+      }`
+    );
+    add(
+      "timeframe",
+      "Timeframe",
+      tf === "15m" ? "warn" : "pass",
+      tf === "15m" ? "15m: veel nep-uitbraken. Breakouts op 1H en 4H zijn betrouwbaarder." : `${tf === "4h" ? "4H" : "1H"}: uitbraken op hogere timeframes zijn betrouwbaarder.`
+    );
+    add(
+      "difficulty",
+      "Moeilijkheid",
+      "info",
+      "Breakouts zijn lastiger dan range-trades: een groot deel blijkt achteraf een deviatie. Speel kleiner (bijvoorbeeld de helft van je normale risico), stap pas in op de retest en houd je stop strikt terug binnen de oude range. Sluit de koers weer binnen de range, dan is de breakout mislukt: neem je verlies en kijk naar een reclaim de andere kant op."
+    );
+
+    const fails = checks.filter((c) => c.state === "fail").length;
+    const warns = checks.filter((c) => c.state === "warn").length;
+    const bad = ["expired", "invalid", "untradeable", "failed"].includes(signal.status);
+    const verdict =
+      fails > 0 || bad
+        ? { key: "skip", label: "Niet spelen", text: "Deze breakout voldoet niet aan de eisen. Breakouts zijn al lastiger: sla hem over of wacht op een betere." }
+        : planned || signal.status === "accepted"
+        ? { key: "plan", label: "Klaarzetten", text: `Zet een limit order op de retest van de oude ${edgeName}, met de stop terug binnen de range. Speel kleiner dan een range-trade.` }
+        : warns >= 1
+        ? { key: "doubt", label: "Twijfel", text: "Speelbaar, maar met kanttekeningen, en breakouts mislukken vaker. Speel kleiner (halve risico) of sla over." }
+        : { key: "play", label: "Speelbaar", text: "Sterke breakout die aan alle eisen voldoet. Toch: speel kleiner dan een range-trade en loop je Trade Entry Checklist door." };
+    return { checks, verdict };
+  }
+
   // ---------- calculator ----------
   // mode "stake": bedrag = inzet (positiewaarde). mode "risk": bedrag = maximaal verlies bij de SL.
   function calc({ entry, stopLoss, tp1, tp2, mode, amount, feePct = 0.1, split = 0.5 }) {
@@ -227,12 +365,23 @@
     const all = opts.candles || (await TD.marketData.candles(sig.symbol, sig.tf, 300));
     const candles = opts.asOf ? all.filter((c) => c.time <= opts.asOf) : all;
     const signal = {
+      setup: sig.setup || "Reclaim",
       direction: sig.direction, status: sig.status, reason: sig.reason, entry: sig.entry, stopLoss: sig.stopLoss,
       tp1: sig.tp1, tp2: sig.tp2, rr1: sig.rr1, rr2: sig.rr2, depth: sig.depth,
       deviationTime: sig.deviationTime, reclaimTime: sig.reclaimTime, retestTime: sig.retestTime,
+      breakoutTime: sig.breakoutTime || null, acceptTime: sig.acceptTime || null, acceptBars: sig.acceptBars ?? null,
+      extension: sig.extension ?? null, retestDepth: sig.retestDepth ?? null, strength: sig.strength ?? null,
     };
-    const m = metrics(candles, sig.range, signal);
-    const { checks, verdict } = assess(m, signal, sig.tf);
+    let checks, verdict, m;
+    if (signal.setup === "Breakout") {
+      // De range beoordelen op de candles van vóór de uitbraak.
+      const pre = signal.breakoutTime ? candles.filter((c) => c.time < signal.breakoutTime) : candles;
+      m = metrics(pre, sig.range, signal);
+      ({ checks, verdict } = assessBreakout(m, signal, sig.tf, candles, sig.range));
+    } else {
+      m = metrics(candles, sig.range, signal);
+      ({ checks, verdict } = assess(m, signal, sig.tf));
+    }
     const s = S.getSettings();
     return save({
       id: "a" + Date.now().toString(36),
@@ -254,5 +403,5 @@
     });
   }
 
-  TD.advise = { all, get, save, remove, metrics, assess, calc, progress, fromSignal };
+  TD.advise = { all, get, save, remove, metrics, assess, assessBreakout, calc, progress, fromSignal };
 })(window.TD);

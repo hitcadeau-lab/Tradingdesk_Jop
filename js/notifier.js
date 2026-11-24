@@ -6,7 +6,7 @@
   const KEY_CONF = "td.notifier";
   const KEY_SIGNALS = "td.signals";
   const MAX_SIGNALS = 150;
-  const ACTIVE = ["reclaim", "trigger"];
+  const ACTIVE = ["reclaim", "accepted", "trigger"];
 
   let timer = null;
   let scanning = false;
@@ -70,10 +70,19 @@
   }
 
   const tfLabel = (tf) => (TD.marketData.TF[tf] || {}).label || tf;
+  const isBreakout = (sig) => sig && sig.setup === "Breakout";
   function title(sig) {
-    return `${shortSym(sig.symbol)} – ${sig.direction} – ${tfLabel(sig.tf)}`;
+    return `${shortSym(sig.symbol)} – ${sig.direction} – ${tfLabel(sig.tf)}${isBreakout(sig) ? " – Breakout" : ""}`;
   }
   function describe(sig) {
+    if (isBreakout(sig)) {
+      const edge = sig.direction === "Long" ? "range high" : "range low";
+      if (sig.status === "trigger") return `Trigger: breakout door de ${edge}, acceptatie erbuiten en de retest houdt (level flip).`;
+      if (sig.status === "accepted") return `Breakout door de ${edge} met acceptatie. Wacht op de retest van de oude ${edge}; niet najagen.`;
+      if (sig.status === "invalid") return "Vervallen: de breakout-setup is niet meer zichtbaar.";
+      if (sig.status === "planned") return `Plan: breakout ${sig.direction.toLowerCase()} na acceptatie buiten de ${edge} en een retest die houdt.`;
+      return sig.reason || "";
+    }
     const edge = sig.direction === "Long" ? "range low" : "range high";
     if (sig.status === "trigger") return `Trigger: deviatie, reclaim en retest van de ${edge}.`;
     if (sig.status === "reclaim") return `Deviatie en reclaim van de ${edge}. Wacht op de retest.`;
@@ -89,7 +98,7 @@
     if (!cfg.desktop || typeof Notification === "undefined" || Notification.permission !== "granted") return;
     try {
       const n = new Notification(title(sig), {
-        body: `${describe(sig)} TP1 (mid) ${TD.util.num(sig.tp1, 6)} · R:R ${sig.rr1.toFixed(1)}`,
+        body: `${describe(sig)} TP1${isBreakout(sig) ? "" : " (mid)"} ${TD.util.num(sig.tp1, 6)} · R:R ${sig.rr1.toFixed(1)}`,
         tag: sig.id,
         silent: false,
       });
@@ -113,13 +122,19 @@
   }
 
   // ---------- scannen ----------
+  function sigId(symbol, tf, signal) {
+    return signal.setup === "Breakout"
+      ? `${symbol}|${tf}|BO|${signal.direction}|${signal.breakoutTime}`
+      : `${symbol}|${tf}|${signal.direction}|${signal.reclaimTime}`;
+  }
   function upsert(list, symbol, tf, range, signal, now) {
-    const id = `${symbol}|${tf}|${signal.direction}|${signal.reclaimTime}`;
+    const id = sigId(symbol, tf, signal);
     const existing = list.find((s) => s.id === id);
     const data = {
       id,
       symbol,
       tf,
+      setup: signal.setup || "Reclaim",
       direction: signal.direction,
       status: signal.status,
       reason: signal.reason,
@@ -134,6 +149,12 @@
       deviationTime: signal.deviationTime,
       reclaimTime: signal.reclaimTime,
       retestTime: signal.retestTime,
+      breakoutTime: signal.breakoutTime || null,
+      acceptTime: signal.acceptTime || null,
+      acceptBars: signal.acceptBars ?? null,
+      extension: signal.extension ?? null,
+      retestDepth: signal.retestDepth ?? null,
+      strength: signal.strength ?? null,
       updatedAt: now,
     };
     if (!existing) {
@@ -142,7 +163,7 @@
       list.unshift(sig);
       return sig;
     }
-    const upgraded = existing.status === "reclaim" && signal.status === "trigger";
+    const upgraded = (existing.status === "reclaim" || existing.status === "accepted") && signal.status === "trigger";
     Object.assign(existing, data);
     if (upgraded) {
       existing.seen = false;
@@ -164,20 +185,24 @@
         const key = `${p.symbol}|${tf}`;
         try {
           const candles = await TD.marketData.candles(p.symbol, tf, 300);
-          const { range, signal } = TD.rangeEngine.analyze(candles);
-          results.set(key, { range, signal, error: null, at: now, last: candles[candles.length - 1].close, lastTime: candles[candles.length - 1].time });
+          const { range, signal, breakout } = TD.rangeEngine.analyze(candles);
+          results.set(key, { range, signal, breakout, error: null, at: now, last: candles[candles.length - 1].close, lastTime: candles[candles.length - 1].time });
+          const seenIds = new Set();
           if (range && signal) {
+            seenIds.add(sigId(p.symbol, tf, signal));
             const sig = upsert(list, p.symbol, tf, range, signal, now);
+            if (sig) toNotify.push(sig);
+          }
+          if (breakout) {
+            seenIds.add(sigId(p.symbol, tf, breakout.signal));
+            const sig = upsert(list, p.symbol, tf, breakout.range, breakout.signal, now);
             if (sig) toNotify.push(sig);
           }
           // Actieve meldingen voor dit pair die niet meer gezien worden: vervallen of verlopen.
           for (const s of list) {
-            if (s.symbol !== p.symbol || s.tf !== tf || !ACTIVE.includes(s.status)) continue;
-            const stillThere = signal && s.id === `${p.symbol}|${tf}|${signal.direction}|${signal.reclaimTime}`;
-            if (!stillThere) {
-              s.status = range ? "invalid" : "expired";
-              s.updatedAt = now;
-            }
+            if (s.symbol !== p.symbol || s.tf !== tf || !ACTIVE.includes(s.status) || seenIds.has(s.id)) continue;
+            s.status = isBreakout(s) || range ? "invalid" : "expired";
+            s.updatedAt = now;
           }
         } catch (e) {
           results.set(key, { range: null, signal: null, error: e.message, at: now });
@@ -194,7 +219,7 @@
           key: `setup|${sig.id}|${sig.status}`,
           kind: "setup",
           title: title(sig),
-          body: `${describe(sig)} TP1 (mid) ${TD.util.price(sig.tp1)} · R:R ${sig.rr1.toFixed(1)}`,
+          body: `${describe(sig)} TP1${isBreakout(sig) ? "" : " (mid)"} ${TD.util.price(sig.tp1)} · R:R ${sig.rr1.toFixed(1)}`,
           link: "#/notifier/" + encodeURIComponent(sig.id),
           silent: true,
         });
@@ -243,7 +268,7 @@
 
   TD.notifier = {
     getConfig, setConfig, getSignals, getSignal, unseenCount, markSeen, clearSignals,
-    scan, start, onChange, requestPermission, title, describe, tfLabel,
+    scan, start, onChange, requestPermission, title, describe, tfLabel, isBreakout, sigId,
     status: () => ({ scanning, lastScanAt, nextScanAt }),
     results: () => results,
   };

@@ -440,3 +440,4 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
   .span3 { grid-column: 1 / -1; }
   .page-head .row { width: 100%; }
 }
+.nowrap { white-space: nowrap; }

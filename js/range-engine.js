@@ -3,6 +3,9 @@
 //    De koers moet daarna in de range blijven en terugkomen (anders is het geen range).
 //  - Setup: deviatie (candle sluit buiten de range) → reclaim (sluit weer binnen) → retest = trigger.
 //    Te diepe deviatie (stop te ver van TP1) = niet tradeable. Clean break richting mid = te laat.
+//  - Breakout: de koers sluit meerdere candles op rij buiten de range (acceptatie), komt terug
+//    naar de oude rand en die houdt (level flip) = trigger. SL terug binnen de oude range,
+//    TP1 = halve range-hoogte, TP2 = hele range-hoogte voorbij de rand (nieuwe range).
 // Candles: [{ time (sec), open, high, low, close }], oud → nieuw.
 (function (root) {
   const DEFAULTS = {
@@ -17,6 +20,11 @@
     retestZone: 0.06, // retest = low binnen 6% van de range low (of high bij short)
     minRR: 1.0, // minimale R:R tot TP1 (mid)
     acceptBars: 6, // zoveel closes op rij buiten de range = breakout (acceptatie)
+    breakoutLookback: 40, // de uitbraak moet in de laatste zoveel candles vallen
+    breakoutFail: 0.1, // close dieper dan 10% terug in de range = breakout mislukt
+    breakoutSl: 0.08, // SL minstens 8% van de range-hoogte terug binnen de oude range
+    breakoutTp1: 0.5, // TP1 = halve range-hoogte voorbij de rand
+    breakoutTp2: 1.0, // TP2 = hele range-hoogte voorbij de rand (measured move)
   };
 
   function atr(c, n = 14) {
@@ -71,6 +79,7 @@
       if (h < o.minRangeAtr * A) return;
       const after = c.slice(e + 1);
       if (after.length < o.minDevelopBars) return;
+      if (o.allowBroken) return tryBroken(s, e, kind, H, L, h, after);
       // Ontwikkeling in de range (de laatste candles tellen niet mee: daar kan een deviatie lopen).
       const body = after.slice(0, Math.max(o.minDevelopBars, after.length - o.signalLookback));
       const isOut = (x) => x.close > H + 0.02 * h || x.close < L - 0.02 * h;
@@ -107,6 +116,42 @@
         midCrosses: midCross,
         distribution: { lower: below, upper: 1 - below }, // aandeel closes onder/boven de mid
         score: Math.min(after.length, 60) + 4 * Math.min(touchHigh + touchLow, 10) + 3 * Math.min(midCross, 8),
+      });
+    };
+
+    // Gebroken range: eerst ontwikkeld, daarna acceptatie buiten de range (breakout).
+    const tryBroken = (s, e, kind, H, L, h, after) => {
+      const up = (x) => x.close > H + 0.02 * h;
+      const down = (x) => x.close < L - 0.02 * h;
+      let b = -1, side = null;
+      for (let i = o.minDevelopBars; i + o.acceptBars <= after.length; i++) {
+        for (const [test, sd] of [[up, "up"], [down, "down"]]) {
+          if (b >= 0) break;
+          let ok = true;
+          for (let j = i; j < i + o.acceptBars; j++) if (!test(after[j])) { ok = false; break; }
+          if (ok && (i === 0 || !test(after[i - 1]))) { b = i; side = sd; }
+        }
+        if (b >= 0) break;
+      }
+      if (b < 0) return;
+      const pre = after.slice(0, b);
+      const isOut = (x) => x.close > H + 0.02 * h || x.close < L - 0.02 * h;
+      if (pre.filter(isOut).length / pre.length > o.maxOutside) return;
+      const mid = (H + L) / 2;
+      const touchHigh = pre.filter((x) => x.high >= H - o.edgeZone * h).length;
+      const touchLow = pre.filter((x) => x.low <= L + o.edgeZone * h).length;
+      let midCross = 0;
+      for (let i = 1; i < pre.length; i++) if ((pre[i - 1].close - mid) * (pre[i].close - mid) < 0) midCross++;
+      if ((kind === "push" ? touchLow : touchHigh) < 1 || midCross < 2) return;
+      const below = pre.filter((x) => x.close < mid).length / pre.length;
+      const bi = e + 1 + b;
+      out.push({
+        kind, low: L, high: H, mid, height: h, start: s, end: e, startTime: c[s].time, endTime: c[e].time,
+        bars: pre.length, touchesHigh: touchHigh, touchesLow: touchLow, midCrosses: midCross,
+        distribution: { lower: below, upper: 1 - below },
+        avgBar: pre.reduce((x, y) => x + (y.high - y.low), 0) / pre.length,
+        breakout: { side, index: bi, time: c[bi].time },
+        score: Math.min(pre.length, 60) + 4 * Math.min(touchHigh + touchLow, 10) + 3 * Math.min(midCross, 8),
       });
     };
 
@@ -211,10 +256,107 @@
     };
   }
 
-  // Alles in één keer: range + setup.
+  // Breakout-setup: de meest recente uitbraak uit een ontwikkelde range. { range, signal } of null.
+  function findBreakout(c, opts = {}) {
+    const o = { ...DEFAULTS, ...opts };
+    const n = c.length;
+    const cands = findRanges(c, { ...opts, allowBroken: true }).filter((r) => r.breakout.index >= n - o.breakoutLookback);
+    if (!cands.length) return null;
+    cands.sort((a, b) => b.breakout.index - a.breakout.index || b.score - a.score);
+    const R = cands[0];
+    const signal = scanBreakout(c, R, o);
+    const { breakout, avgBar, ...range } = R;
+    return signal ? { range, signal } : null;
+  }
+
+  function scanBreakout(c, R, o) {
+    const n = c.length;
+    const long = R.breakout.side === "up";
+    const h = R.height;
+    const edge = long ? R.high : R.low;
+    const sgn = long ? 1 : -1;
+    const beyond = (p) => (p - edge) * sgn; // > 0 = buiten de range, in de richting van de uitbraak
+    const b = R.breakout.index;
+    let accept = 0;
+    for (let i = b; i < n && beyond(c[i].close) > 0.02 * h; i++) accept++;
+    const acceptEnd = b + Math.min(accept, o.acceptBars) - 1;
+    const tp1 = edge + sgn * o.breakoutTp1 * h;
+    const tp2 = edge + sgn * o.breakoutTp2 * h;
+
+    let ext = 0, failed = -1, retest = -1, firstTp1 = -1, worst = Infinity;
+    for (let i = b; i < n; i++) {
+      const x = c[i];
+      ext = Math.max(ext, beyond(long ? x.high : x.low) / h);
+      if (beyond(x.close) < -o.breakoutFail * h) { failed = i; break; }
+      if (firstTp1 < 0 && retest < 0 && beyond(long ? x.high : x.low) >= o.breakoutTp1 * h) firstTp1 = i;
+      if (i > acceptEnd) {
+        const lowSide = beyond(long ? x.low : x.high); // hoe dicht de lont bij de oude rand kwam
+        worst = Math.min(worst, lowSide);
+        if (lowSide <= o.retestZone * h && beyond(x.close) >= 0) retest = i;
+      }
+    }
+    // Na de retest opnieuw onder de oude rand gesloten? Dan houdt het level (nog) niet.
+    let holding = retest >= 0;
+    for (let i = retest + 1; holding && i < n; i++) if (beyond(c[i].close) < 0) holding = false;
+
+    const last = c[n - 1];
+    const touched = worst !== Infinity && worst <= o.retestZone * h;
+    const retestDepth = touched ? Math.max(0, -worst / h) : null; // hoe ver de retest terug in de range kwam
+    const slBase = Math.min(worst === Infinity ? 0 : worst, -o.breakoutSl * h);
+    const sl = edge + sgn * (slBase - 0.03 * h);
+    const entry = holding ? last.close : edge;
+    const risk = Math.abs(entry - sl);
+    const rr1 = Math.abs(tp1 - entry) / risk;
+    const rr2 = Math.abs(tp2 - entry) / risk;
+    const body = Math.abs(c[b].close - c[b].open);
+
+    let status = holding ? "trigger" : "accepted";
+    let reason = "";
+    if (failed >= 0) {
+      status = "failed";
+      reason = "Mislukt: de koers sloot weer in de range. De uitbraak was een deviatie; kijk naar een reclaim de andere kant op.";
+    } else if (firstTp1 >= 0) {
+      status = "expired";
+      reason = "Te laat: de koers liep al naar TP1 zonder retest. Een breakout ga je niet najagen.";
+    } else if (holding && beyond(last.close) >= (o.breakoutTp1 - 0.1) * h) {
+      status = "expired";
+      reason = "Te laat: de koers is al bijna bij TP1.";
+    } else if (rr1 < o.minRR) {
+      status = "untradeable";
+      reason = `R:R tot TP1 is maar ${rr1.toFixed(2)}.`;
+    }
+    return {
+      setup: "Breakout",
+      direction: long ? "Long" : "Short",
+      status,
+      reason,
+      breakoutIndex: b,
+      breakoutTime: c[b].time,
+      acceptTime: c[acceptEnd].time,
+      acceptBars: accept,
+      retestIndex: holding ? retest : -1,
+      retestTime: holding ? c[retest].time : null,
+      extension: ext,
+      retestDepth,
+      strength: R.avgBar > 0 ? body / R.avgBar : null,
+      depth: null,
+      deviationTime: null,
+      reclaimTime: null,
+      entry,
+      stopLoss: sl,
+      tp1,
+      tp2,
+      rr1,
+      rr2,
+    };
+  }
+
+  // Alles in één keer: range + setup (deviatie/reclaim) en een eventuele breakout.
   function analyze(c, opts) {
     const range = findRange(c, opts);
-    return { range, signal: range ? findSignal(c, range, opts) : null };
+    const signal = range ? findSignal(c, range, opts) : null;
+    if (signal) signal.setup = "Reclaim";
+    return { range, signal, breakout: findBreakout(c, opts) };
   }
 
   // Wat gebeurde er na een setup? Eerst SL, of eerst TP1 (en daarna TP2)?
@@ -245,13 +387,16 @@
     const byKey = new Map();
     for (let t = start; t < c.length; t++) {
       const w = c.slice(0, t + 1);
-      const { range, signal } = analyze(w, opts);
-      if (!range || !signal) continue;
-      const key = `${signal.direction}|${signal.reclaimTime}`;
-      const prev = byKey.get(key);
-      // Bewaar de toestand op het beslissende moment: de eerste trigger, anders de reclaim.
-      if (!prev || (prev.signal.status !== "trigger" && signal.status === "trigger")) {
-        byKey.set(key, { range, signal: { ...signal }, atIndex: t, atTime: c[t].time });
+      const { range, signal, breakout } = analyze(w, opts);
+      const found = [];
+      if (range && signal) found.push([`${signal.direction}|${signal.reclaimTime}`, range, signal]);
+      if (breakout) found.push([`BO|${breakout.signal.direction}|${breakout.signal.breakoutTime}`, breakout.range, breakout.signal]);
+      for (const [key, rg, sg] of found) {
+        const prev = byKey.get(key);
+        // Bewaar de toestand op het beslissende moment: de eerste trigger, anders de reclaim/acceptatie.
+        if (!prev || (prev.signal.status !== "trigger" && sg.status === "trigger")) {
+          byKey.set(key, { range: rg, signal: { ...sg }, atIndex: t, atTime: c[t].time });
+        }
       }
     }
     return [...byKey.values()]
@@ -269,6 +414,7 @@
     const tp1 = range.mid;
     const tp2 = long ? range.high : range.low;
     return {
+      setup: "Reclaim",
       direction,
       status: "planned",
       reason: "",
@@ -285,7 +431,25 @@
     };
   }
 
-  const api = { DEFAULTS, atr, pivots, findRanges, findRange, findSignal, analyze, outcome, findHistory, planSetup };
+  // Plan voor een breakout: wacht op acceptatie buiten de range, entry op de retest van de oude rand.
+  function planBreakout(range, direction) {
+    const o = DEFAULTS;
+    const long = direction === "Long";
+    const h = range.high - range.low;
+    const sgn = long ? 1 : -1;
+    const entry = long ? range.high : range.low;
+    const stopLoss = entry - sgn * (o.breakoutSl + 0.03) * h;
+    const tp1 = entry + sgn * o.breakoutTp1 * h;
+    const tp2 = entry + sgn * o.breakoutTp2 * h;
+    return {
+      setup: "Breakout", direction, status: "planned", reason: "", entry, stopLoss, tp1, tp2,
+      rr1: Math.abs(tp1 - entry) / Math.abs(entry - stopLoss), rr2: Math.abs(tp2 - entry) / Math.abs(entry - stopLoss),
+      depth: null, deviationTime: null, reclaimTime: null, retestTime: null, breakoutTime: null, acceptTime: null,
+      acceptBars: null, extension: null, retestDepth: null, strength: null,
+    };
+  }
+
+  const api = { DEFAULTS, atr, pivots, findRanges, findRange, findSignal, findBreakout, analyze, outcome, findHistory, planSetup, planBreakout };
   if (typeof module !== "undefined" && module.exports) module.exports = api;
   if (root) {
     root.TD = root.TD || {};

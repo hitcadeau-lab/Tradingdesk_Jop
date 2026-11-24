@@ -12,7 +12,9 @@
   }
 
   const tfLabel = (tf) => (TD.marketData.TF[tf] || {}).label || tf;
-  const title = (a) => `${shortSym(a.symbol)} – ${a.direction} – ${tfLabel(a.tf)}`;
+  const isBO = (a) => a.signal && a.signal.setup === "Breakout";
+  const title = (a) => `${shortSym(a.symbol)} – ${a.direction} – ${tfLabel(a.tf)}${isBO(a) ? " – Breakout" : ""}`;
+  const tp1Name = (a) => (isBO(a) ? "TP1" : "TP1 (mid)");
   const verdictBadge = (v) => `<span class="badge verdict ${v.key}">${esc(v.label)}</span>`;
   const MARK = { pass: "✓", warn: "!", fail: "✗", info: "i" };
   const kindTag = (a) =>
@@ -20,7 +22,11 @@
   function subtitle(a) {
     const g = a.signal;
     if (a.kind === "history") return `Historische setup van ${date(a.asOf * 1000, true)}, beoordeeld met de data van toen`;
-    if (a.kind === "plan") return `Plan van ${date(a.createdAt, true)}: entry bij de ${g.direction === "Long" ? "range low" : "range high"}, wacht op deviatie + reclaim + retest`;
+    if (a.kind === "plan")
+      return isBO(a)
+        ? `Breakout-plan van ${date(a.createdAt, true)}: wacht op acceptatie buiten de ${g.direction === "Long" ? "range high" : "range low"}, entry op de retest`
+        : `Plan van ${date(a.createdAt, true)}: entry bij de ${g.direction === "Long" ? "range low" : "range high"}, wacht op deviatie + reclaim + retest`;
+    if (isBO(a)) return `Breakout-advies van ${date(a.createdAt, true)} · ${g.status === "trigger" ? "retest houdt" : g.status === "accepted" ? "acceptatie, wacht op retest" : g.status}`;
     return `Advies van ${date(a.createdAt, true)} · trigger: ${g.status === "trigger" ? "retest" : g.status === "reclaim" ? "reclaim (wacht op retest)" : g.status}`;
   }
 
@@ -66,7 +72,7 @@
     const g = a.signal;
     const levels = [
       { key: "tp2", label: "TP2", price: g.tp2, color: "var(--pos)", pnl: c && c.scenarios[3].pnl },
-      { key: "tp1", label: "TP1 (mid)", price: g.tp1, color: "var(--warn)", pnl: c && allAt(a, g.tp1) },
+      { key: "tp1", label: tp1Name(a), price: g.tp1, color: "var(--warn)", pnl: c && allAt(a, g.tp1) },
       { key: "entry", label: "Entry", price: g.entry, color: "var(--accent)", pnl: 0 },
       { key: "sl", label: "Stop loss", price: g.stopLoss, color: "var(--neg)", pnl: c && c.scenarios[0].pnl },
     ];
@@ -238,7 +244,7 @@
       e.preventDefault();
       const c = paintCalc();
       const q = new URLSearchParams({
-        ticker: a.symbol, direction: a.direction, setup: "Reclaim", trigger: "Deviatie + reclaim + retest",
+        ticker: a.symbol, direction: a.direction, setup: isBO(a) ? "Breakout" : "Reclaim", trigger: isBO(a) ? "Breakout + retest" : "Deviatie + reclaim + retest",
         rangeTf: tfLabel(a.tf), rangeHigh: +a.range.high.toPrecision(10), rangeLow: +a.range.low.toPrecision(10),
         entry: +g.entry.toPrecision(10), stopLoss: +g.stopLoss.toPrecision(10), tp1: +g.tp1.toPrecision(10), tp2: +g.tp2.toPrecision(10),
       });
@@ -255,7 +261,7 @@
       const since = a.kind === "history" ? "na deze setup" : "sinds dit advies";
       const hitTxt = {
         sl: `<span class="neg">${a.kind === "history" ? "Achteraf: de stop loss werd" : "De stop loss is"} ${since} geraakt.</span>`,
-        tp1: `<span class="pos">${a.kind === "history" ? "Achteraf: TP1 (mid) werd" : "TP1 (mid) is"} ${since} geraakt.</span>`,
+        tp1: `<span class="pos">${a.kind === "history" ? `Achteraf: ${tp1Name(a)} werd` : `${tp1Name(a)} is`} ${since} geraakt.</span>`,
         tp2: `<span class="pos">${a.kind === "history" ? "Achteraf: TP2 werd" : "TP2 is"} ${since} geraakt.</span>`,
       }[pr.hit] || `Nog geen SL of TP geraakt ${since}.`;
       root.querySelector("#adv-live").innerHTML = `Koers nu <strong>${num(pr.price, 6)}</strong> (${pr.fromEntry >= 0 ? "+" : ""}${pct(pr.fromEntry, 2)} t.o.v. entry) · ${hitTxt}`;

@@ -558,6 +558,193 @@
     };
   });
 
+  // ===== Breakouts: van de ene range naar de volgende =====
+  // Basis voor alle breakout-opdrachten: een range, uitbraak boven de range high met
+  // acceptatie, en (optioneel) een retest van de oude high die houdt. Spiegelen = short.
+  function breakoutPath(rand, R, { retest = true, run = 0.35 } = {}) {
+    const path = rangePath(rand, R, 5); // eindigt bij de high
+    path.push({ price: R.high + R.h * (run * 0.7), bars: 3, clampLow: R.high + R.h * 0.03 });
+    path.push({ price: R.high + R.h * run, bars: 5, clampLow: R.high + R.h * 0.06 });
+    if (retest) {
+      path.push({ price: R.high + R.h * 0.04, bars: 3, wickTo: R.high - R.h * 0.01, clampLow: R.high + R.h * 0.01 });
+      path.push({ price: R.high + R.h * 0.1, bars: 1, clampLow: R.high + R.h * 0.02 });
+    }
+    return path;
+  }
+
+  T.push(function breakoutAcceptance(rand) {
+    const R = makeRange(rand);
+    const short = rand() < 0.5;
+    const accepted = rand() < 0.5;
+    let path;
+    if (accepted) path = breakoutPath(rand, R, { retest: false, run: 0.3 });
+    else {
+      path = rangePath(rand, R, 5);
+      path.push({ price: R.high + R.h * 0.18, bars: 2, clampLow: R.high + R.h * 0.06 });
+      path.push({ price: R.high - R.h * 0.25, bars: 4, clampHigh: R.high - R.h * 0.03 });
+      path.push({ price: R.mid + R.h * 0.1, bars: 3, ...within(R) });
+    }
+    let candles = build(rand, R, path);
+    if (short) candles = mirror(candles, R);
+    const lvl = short ? "range low" : "range high";
+    const dir = short ? "short" : "long";
+    return {
+      cat: "setup",
+      title: "Breakout met acceptatie?",
+      prompt: `De koers ging door de ${lvl}. Wat zie je?`,
+      svg: C.candleSVG(candles, { lines: rangeLines(R) }),
+      options: shuffle(rand, [
+        (accepted ? ok : no)(
+          "Breakout met acceptatie: de koers blijft buiten de range sluiten",
+          accepted
+            ? `Goed. Candle na candle sluit buiten de ${lvl}: de markt accepteert de nieuwe prijzen. Nu wacht je op de retest van de oude ${lvl}.`
+            : `Nee. Na twee candles sloot de koers weer binnen de range: er is geen acceptatie. Dit was een deviatie.`
+        ),
+        (!accepted ? ok : no)(
+          "Deviatie: de koers sloot snel weer binnen de range",
+          !accepted
+            ? `Goed. Even buiten de ${lvl}, daarna direct terug binnen: een deviatie. Dat is juist een range-setup de andere kant op (reclaim), geen breakout.`
+            : "Nee. De koers is niet teruggekomen; hij blijft buiten de range sluiten."
+        ),
+        no(`Direct ${dir} op de eerste candle door de ${lvl}`, "Eén candle door het level bewijst nog niets: de meeste uitbraken blijken een deviatie. Je wacht op acceptatie (meerdere closes buiten de range) en een retest."),
+        no("Een wick door het level is genoeg voor een breakout", "Een wick zonder close erbuiten is een swing failure. Voor een breakout tellen alleen closes buiten de range, meerdere op rij."),
+      ]),
+      lesson: "Breakout = meerdere closes op rij buiten de range (acceptatie). Snel terug binnen = deviatie. Pas na acceptatie wacht je op de retest.",
+    };
+  });
+
+  T.push(function breakoutEntry(rand) {
+    const R = makeRange(rand);
+    const short = rand() < 0.5;
+    let candles = build(rand, R, breakoutPath(rand, R, { retest: false, run: 0.38 }));
+    if (short) candles = mirror(candles, R);
+    const lvl = short ? "range low" : "range high";
+    const dir = short ? "short" : "long";
+    return {
+      cat: "setup",
+      title: "Najagen of wachten?",
+      prompt: `De koers is uitgebroken door de ${lvl} en sluit al een tijd erbuiten. Je wilt de breakout ${dir} spelen. Wat doe je?`,
+      svg: C.candleSVG(candles, { lines: rangeLines(R) }),
+      options: shuffle(rand, [
+        ok(`Limit order op de retest van de oude ${lvl}`, `Goed. Je stapt in als de koers terugkomt naar de oude ${lvl} en die houdt (level flip). Dan staat je stop dichtbij, terug in de range, en is je R:R goed.`),
+        no(`Nu ${dir} tegen de huidige prijs, anders mis je hem`, "Dat is najagen (FOMO). Je stop moet dan ver weg, terug in de range, en je R:R tot het target is slecht. Mist hij de retest, dan laat je hem gaan."),
+        no(`${short ? "Long" : "Short"}, de koers is al te ver gelopen`, "Tegen een geaccepteerde breakout in traden betekent tegen de nieuwe beweging in. Daar is geen setup voor."),
+        no("Instappen bij de mid van de oude range", "De oude mid ligt diep in de oude range. Komt de koers daar, dan is de breakout mislukt."),
+      ]),
+      lesson: "Een breakout jaag je niet na. Entry op de retest van de oude rand, en alleen als die houdt.",
+    };
+  });
+
+  T.push(function breakoutStop(rand) {
+    const R = makeRange(rand);
+    const short = rand() < 0.5;
+    let candles = build(rand, R, breakoutPath(rand, R));
+    const n = candles.length;
+    let A = R.high - R.h * 0.12, B = R.high + R.h * 0.01, Cc = R.low - R.h * 0.03;
+    if (short) {
+      candles = mirror(candles, R);
+      [A, B, Cc] = [A, B, Cc].map((p) => mp(R, p));
+    }
+    const lvl = short ? "range low" : "range high";
+    const letters = shuffle(rand, ["A", "B", "C"]);
+    const pts = [
+      { p: A, l: letters[0], good: true, why: `Net terug binnen de oude range, voorbij de lont van de retest. Sluit de koers daar, dan houdt de oude ${lvl} niet meer en is de breakout mislukt: precies het punt waarop je idee ongeldig is.` },
+      { p: B, l: letters[1], good: false, why: `Precies op de oude ${lvl} ligt je stop binnen het bereik van de retest. Een gewone lont naar het level stopt je uit, terwijl de breakout nog klopt.` },
+      { p: Cc, l: letters[2], good: false, why: `Aan de andere kant van de oude range is je stop veel te ver weg: je R:R is dan slecht. Komt de koers diep terug in de range, dan is de breakout allang mislukt.` },
+    ];
+    return {
+      cat: "sltp",
+      title: "Stop bij een breakout",
+      prompt: `Je gaat <strong>${short ? "short" : "long"}</strong> op de retest van de oude ${lvl} na een breakout. Waar zet je je stoploss?`,
+      svg: C.candleSVG(candles, { lines: rangeLines(R), markers: pts.map((x) => ({ i: n - 1, price: x.p, label: x.l })) }),
+      options: shuffle(rand, pts).map((x) => (x.good ? ok : no)("Punt " + x.l, x.why)),
+      lesson: "Bij een breakout staat je stop terug binnen de oude range, voorbij de lont van de retest. Komt de koers daar, dan is de breakout mislukt.",
+    };
+  });
+
+  T.push(function breakoutTarget(rand) {
+    const R = makeRange(rand);
+    const short = rand() < 0.5;
+    let candles = build(rand, R, breakoutPath(rand, R));
+    const n = candles.length;
+    let A = R.high + R.h * 0.5, B = R.mid, Cc = R.high + R.h * 2.2;
+    if (short) {
+      candles = mirror(candles, R);
+      [A, B, Cc] = [A, B, Cc].map((p) => mp(R, p));
+    }
+    const letters = shuffle(rand, ["A", "B", "C"]);
+    const pts = [
+      { p: A, l: letters[0], good: true, why: "Een halve range-hoogte voorbij de oude rand: een logisch eerste target. Neem daar deelwinst en zet je stop op break-even. TP2 ligt een hele range-hoogte verder, waar de nieuwe range vaak eindigt." },
+      { p: B, l: letters[1], good: false, why: `De oude mid ligt ${short ? "boven" : "onder"} je entry, terug in de oude range: daar ligt je stop, geen target.` },
+      { p: Cc, l: letters[2], good: false, why: "Ruim twee range-hoogtes verder is geen logisch eerste target. Je geeft dan te veel weg als de breakout stokt." },
+    ];
+    return {
+      cat: "sltp",
+      title: "Target bij een breakout",
+      prompt: `Je bent <strong>${short ? "short" : "long"}</strong> gegaan op de retest na een breakout. Waar ligt je <strong>TP1</strong>?`,
+      svg: C.candleSVG(candles, { lines: rangeLines(R), markers: pts.map((x) => ({ i: n - 1, price: x.p, label: x.l })) }),
+      options: shuffle(rand, pts).map((x) => (x.good ? ok : no)("Punt " + x.l, x.why)),
+      lesson: "Na een breakout ontstaat vaak een nieuwe range van ongeveer dezelfde hoogte. TP1 = halve range-hoogte voorbij de rand, TP2 = een hele range-hoogte.",
+    };
+  });
+
+  T.push(function breakoutFailed(rand) {
+    const R = makeRange(rand);
+    const short = rand() < 0.5;
+    const path = breakoutPath(rand, R, { retest: false, run: 0.28 });
+    path.push({ price: R.high - R.h * 0.22, bars: 4, clampHigh: R.high + R.h * 0.2 });
+    path.push({ price: R.high - R.h * 0.3, bars: 2, clampHigh: R.high - R.h * 0.12 });
+    let candles = build(rand, R, path);
+    if (short) candles = mirror(candles, R);
+    const lvl = short ? "range low" : "range high";
+    const dir = short ? "short" : "long";
+    const opp = short ? "long" : "short";
+    return {
+      cat: "setup",
+      title: "Mislukte breakout",
+      prompt: `Je zat ${dir} op een breakout door de ${lvl}. Nu sluit de koers weer duidelijk binnen de oude range. Wat doe je?`,
+      svg: C.candleSVG(candles, { lines: rangeLines(R) }),
+      options: shuffle(rand, [
+        ok("De breakout is mislukt: eruit (je stop) en kijken naar een reclaim de andere kant op", `Goed. Terug binnen de range betekent dat de uitbraak een deviatie was. Je idee klopt niet meer, dus je neemt je verlies. Een mislukte breakout is vaak juist een ${opp}-setup: deviatie + reclaim van de ${lvl}.`),
+        no("Bijkopen, nu is hij goedkoper", "Bijkopen in een trade die ongeldig is, vergroot je verlies. Je stop staat er niet voor niets."),
+        no("Stop verder weg zetten en hopen", "Je stop verplaatsen omdat de trade tegenzit, is precies wat de checklist verbiedt. De breakout is mislukt."),
+        no("Niets doen, het blijft een breakout", "Een breakout bestaat zolang de koers buiten de range blijft. Sluit hij duidelijk weer binnen, dan is het geen breakout meer."),
+      ]),
+      lesson: "Sluit de koers na een breakout weer duidelijk in de range, dan was het een deviatie. Neem je verlies en kijk naar een reclaim de andere kant op.",
+    };
+  });
+
+  T.push(function breakoutRisk(rand) {
+    const variant = pick(rand, ["size", "when"]);
+    if (variant === "size")
+      return {
+        cat: "mindset",
+        title: "Breakouts en risico",
+        prompt: "Breakouts mislukken vaker dan range-trades. Je risico per trade is normaal 1%. Wat doe je bij een breakout?",
+        svg: "",
+        options: shuffle(rand, [
+          ok("Kleiner spelen (bijv. 0,5%) en strengere eisen: acceptatie, retest en minstens 2R", "Goed. Een lagere slagingskans vang je op met kleiner risico en een betere R:R. Zo kost een reeks mislukte breakouts je weinig."),
+          no("Groter spelen (2%), breakouts lopen verder", "Breakouts kunnen verder lopen, maar ze mislukken ook vaker. Groter risico op een lagere winrate vergroot je drawdown."),
+          no("Zelfde 1%, maar zonder stop, want hij komt toch terug", "Zonder stop kan één mislukte breakout je hele account raken. Een stop is nooit optioneel."),
+          no("Alleen breakouts traden, die zijn het makkelijkst", "Breakouts zijn juist lastiger: veel uitbraken blijken een deviatie. Range-trades bij de randen hebben vaak de betere winrate."),
+        ]),
+        lesson: "Lagere slagingskans = kleiner risico en hogere R:R-eis. Speel breakouts kleiner dan range-trades.",
+      };
+    return {
+      cat: "mindset",
+      title: "Wanneer speel je een breakout?",
+      prompt: "Welke situatie geeft de beste kans op een geslaagde breakout?",
+      svg: "",
+      options: shuffle(rand, [
+        ok("Een goed ontwikkelde range, uitbraak met de trend mee, acceptatie en een retest die houdt", "Goed. Hoe sterker de range en hoe meer de trend meewerkt, hoe meer de uitbraak betekent. De retest bevestigt de level flip."),
+        no("Een jonge range van een paar candles, uitbraak tegen de trend in", "Een jonge range heeft weinig betekenis, en tegen de trend in mislukken breakouts het vaakst."),
+        no("Een uitbraak-candle met een lange lont terug in de range", "Een lange lont terug in de range laat zien dat de uitbraak werd afgewezen: dat lijkt eerder op een deviatie."),
+        no("Een uitbraak vlak voor groot nieuws", "Rond groot nieuws ontstaan veel nep-uitbraken. De checklist vraagt je nieuws te checken en dan juist voorzichtig te zijn."),
+      ]),
+      lesson: "Beste breakouts: sterke range, met de trend mee, acceptatie en een retest die houdt. Anders: overslaan.",
+    };
+  });
+
   // ===== Technische analyse basis =====
 
   T.push(function candleAnatomy(rand) {
@@ -851,16 +1038,18 @@
     const riskAmt = (bal * riskPct) / 100;
     const size = riskAmt / (entry - sl);
     const cur = S.getSettings().currency;
+    // Units met 4 significante cijfers: bij hoge koersen worden kleine aantallen anders allemaal "0,0002".
+    const u = (v) => (+v).toLocaleString("nl-NL", { maximumSignificantDigits: 4 });
     return {
       cat: "risk",
       title: "Positiegrootte",
       prompt: `Saldo <strong>${money(bal, cur)}</strong>, je riskeert <strong>${riskPct}%</strong>. Long entry <strong>${fmt(entry)}</strong>, stoploss <strong>${fmt(sl)}</strong>. Hoeveel units koop je?`,
       svg: "",
       options: shuffle(rand, [
-        ok(fmt(size), `Risicobedrag = ${money(bal, cur)} × ${riskPct}% = ${money(riskAmt, cur)}. Afstand tot SL = ${fmt(entry - sl)}. Units = ${money(riskAmt, cur)} / ${fmt(entry - sl)} = ${fmt(size)}. Raak je je SL, dan verlies je precies ${riskPct}%.`),
-        no(fmt(riskAmt / entry), "Dit deelt het risicobedrag door de entryprijs. Dan bepaal je je inzet, niet je risico: je verlies bij de SL is dan veel kleiner dan je wilde."),
-        no(fmt(size * 10), `Tien keer te groot: bij de SL zou je ${riskPct * 10}% verliezen.`),
-        no(fmt(bal / entry), "Dit is je hele saldo inzetten. Je risico is dan niet meer gekoppeld aan je stoploss."),
+        ok(u(size), `Risicobedrag = ${money(bal, cur)} × ${riskPct}% = ${money(riskAmt, cur)}. Afstand tot SL = ${fmt(entry - sl)}. Units = ${money(riskAmt, cur)} / ${fmt(entry - sl)} = ${u(size)}. Raak je je SL, dan verlies je precies ${riskPct}%.`),
+        no(u(riskAmt / entry), "Dit deelt het risicobedrag door de entryprijs. Dan bepaal je je inzet, niet je risico: je verlies bij de SL is dan veel kleiner dan je wilde."),
+        no(u(size * 10), `Tien keer te groot: bij de SL zou je ${riskPct * 10}% verliezen.`),
+        no(u(bal / entry), "Dit is je hele saldo inzetten. Je risico is dan niet meer gekoppeld aan je stoploss."),
       ]),
       lesson: "Positiegrootte = (saldo × risico%) / |entry − SL|. Zo is elke trade precies 1R, hoe ver je stop ook staat.",
     };
