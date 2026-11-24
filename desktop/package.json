@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.7.1",
+  "version": "1.8.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 5,
     "webMinShell": 5,
-    "releaseNotes": "Advise: adviezen verwijderen vanuit het overzicht (per kaart, alle Niet spelen of alles), met ongedaan maken. Geen dubbele adviezen meer bij dubbelklikken."
+    "releaseNotes": "Alles via Kraken: BTC, ETH, SOL en de xStocks Amazon, Apple, Anthropic, Nvidia, QQQ, Google, Meta, Goud en Tesla, allemaal in de Notifier op 15m, 1H en 4H. TradingView toont de Kraken-markten (KRAKEN:BTCUSD, KRAKEN:AMZNXUSD.PM)."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
