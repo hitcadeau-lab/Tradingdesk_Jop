@@ -194,6 +194,86 @@
       });
   }
 
+  // ---------- Mobiele meldingen (ntfy) ----------
+  function pushHTML() {
+    if (!TD.push) return "";
+    const c = TD.push.getConfig();
+    const chk = (id, on, label) => `<label class="chk"><input type="checkbox" data-push="${id}" ${on ? "checked" : ""}> ${label}</label>`;
+    return `<section class="panel settings" id="push-panel">
+      <h2>Mobiele meldingen <span class="badge muted">ntfy</span></h2>
+      <p class="muted small">Krijg je meldingen ook als pushmelding op je telefoon. Gratis, zonder account, via de app <strong>ntfy</strong>. Je Mac moet aan staan met Tradingdesk open: de app scant zelf.</p>
+      <ol class="small steps">
+        <li>Installeer <strong>ntfy</strong> op je telefoon (App Store of Google Play).</li>
+        <li>Maak hieronder een kanaal aan en kopieer de naam.</li>
+        <li>Tik in de ntfy-app op <strong>+</strong>, plak de naam bij <em>Topic</em> en kies <strong>Subscribe</strong>.</li>
+        <li>Zet de meldingen hier aan en stuur een testmelding.</li>
+      </ol>
+      <div class="row gap push-topic">
+        <input type="text" id="push-topic" readonly value="${esc(c.topic)}" placeholder="Nog geen kanaal" aria-label="ntfy-kanaal">
+        <button class="btn small" id="push-copy" ${c.topic ? "" : "disabled"}>Kopiëren</button>
+        <button class="btn small" id="push-new">${c.topic ? "Nieuw kanaal" : "Kanaal aanmaken"}</button>
+      </div>
+      <p class="muted small">De kanaalnaam werkt als wachtwoord: wie hem kent, kan je meldingen lezen. Deel hem niet. Er gaat alleen de tekst van de melding mee, geen saldo of keys.</p>
+      ${chk("enabled", c.enabled, "<strong>Meldingen naar mijn telefoon sturen</strong>")}
+      <div class="grid g4 push-opts">
+        <div><div class="label">Welke meldingen</div>
+          ${chk("kinds.trigger", c.kinds.trigger, "Setups: <strong>Trigger</strong>")}
+          ${chk("kinds.wait", c.kinds.wait, "Setups: wacht op retest")}
+          ${chk("kinds.trade", c.kinds.trade, "Mijn trades: TP, SL, break-even")}
+          ${chk("kinds.fill", c.kinds.fill, "Papier-orders: gevuld en gesloten")}
+        </div>
+        <div><div class="label">Setups op timeframe</div>
+          ${chk("tfs.15m", c.tfs["15m"], "15m")}
+          ${chk("tfs.1h", c.tfs["1h"], "1H")}
+          ${chk("tfs.4h", c.tfs["4h"], "4H")}
+        </div>
+      </div>
+      <div class="row gap" style="margin-top:10px">
+        <button class="btn small primary" id="push-test" ${c.topic ? "" : "disabled"}>Testmelding sturen</button>
+        <span class="muted small" id="push-out"></span>
+      </div>
+      <p class="muted small">Een tik op de melding opent de markt in Kraken Pro.</p>
+    </section>`;
+  }
+  function bindPush(root) {
+    const P = TD.push;
+    if (!P || !root.querySelector("#push-panel")) return;
+    const out = root.querySelector("#push-out");
+    root.querySelector("#push-new").addEventListener("click", () => {
+      if (P.getConfig().topic && !confirm("Een nieuw kanaal maken? Je moet je dan in de ntfy-app opnieuw abonneren.")) return;
+      P.setConfig({ topic: P.newTopic() });
+      render(root);
+      root.querySelector("#push-panel").scrollIntoView({ block: "center" });
+    });
+    root.querySelector("#push-copy").addEventListener("click", async () => {
+      const v = root.querySelector("#push-topic").value;
+      try {
+        await navigator.clipboard.writeText(v);
+        out.textContent = "Gekopieerd.";
+      } catch {
+        root.querySelector("#push-topic").select();
+        out.textContent = "Selecteer en kopieer de naam (Cmd+C).";
+      }
+    });
+    root.querySelectorAll("[data-push]").forEach((cb) =>
+      cb.addEventListener("change", () => {
+        const c = P.getConfig();
+        const [grp, k] = cb.dataset.push.split(".");
+        if (k) P.setConfig({ [grp]: { ...c[grp], [k]: cb.checked } });
+        else P.setConfig({ [grp]: cb.checked });
+      })
+    );
+    root.querySelector("#push-test").addEventListener("click", async () => {
+      out.textContent = "Versturen…";
+      try {
+        await P.test();
+        out.textContent = "Verstuurd. Zie je hem op je telefoon? Dan werkt het.";
+      } catch (e) {
+        out.textContent = "Niet gelukt: " + e.message;
+      }
+    });
+  }
+
   function render(root) {
     const s = S.getSettings();
     const d = S.desktop;
@@ -216,6 +296,7 @@
       </section>
 
       ${exchangeHTML()}
+      ${pushHTML()}
 
       <section class="panel settings">
         <h2>Opslag</h2>
@@ -280,6 +361,7 @@
       </section>`;
 
     bindExchange(root);
+    bindPush(root);
     paintKraken(root);
 
     // ---- trading ----

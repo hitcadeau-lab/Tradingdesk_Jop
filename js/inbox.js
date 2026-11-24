@@ -31,6 +31,7 @@
     list.unshift(n);
     save(list);
     if (!item.silent) desktop(n);
+    if (TD.push) TD.push.onNotification(n); // ook naar je telefoon (ntfy), als dat aan staat
     return n;
   }
 

@@ -453,3 +453,6 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .advice-del { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 6px; color: var(--muted); }
 .advice-del:hover { color: var(--neg); background: rgba(239, 83, 80, .12); }
 .undo-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }
+/* Mobiele meldingen */
+.push-topic input { flex: 1; min-width: 240px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.push-opts .chk { display: block; margin: 4px 0; }

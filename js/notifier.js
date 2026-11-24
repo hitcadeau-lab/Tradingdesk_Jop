@@ -220,6 +220,9 @@
           body: `${describe(sig)} TP1${isBreakout(sig) ? "" : " (mid)"} ${TD.util.price(sig.tp1)} · R:R ${sig.rr1.toFixed(1)}`,
           link: "#/notifier/" + encodeURIComponent(sig.id),
           silent: true,
+          symbol: sig.symbol,
+          tf: sig.tf,
+          status: sig.status,
         });
     });
     emit();
