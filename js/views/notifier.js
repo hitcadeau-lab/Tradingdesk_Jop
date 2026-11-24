@@ -16,17 +16,58 @@
     unsub = null;
   }
 
-  const statusBadge = (st) =>
-    ({
-      trigger: '<span class="badge pos">Trigger</span>',
-      reclaim: '<span class="badge warn">Reclaim · wacht op retest</span>',
-      accepted: '<span class="badge warn">Breakout · wacht op retest</span>',
-      failed: '<span class="badge muted">Breakout mislukt</span>',
-      planned: '<span class="badge muted">Plan</span>',
-      expired: '<span class="badge muted">Verlopen</span>',
-      invalid: '<span class="badge muted">Vervallen</span>',
-      untradeable: '<span class="badge neg">Niet tradeable</span>',
-    })[st] || esc(st);
+  const BADGE = {
+    trigger: '<span class="badge pos"%s>Trigger</span>',
+    reclaim: '<span class="badge warn"%s>Reclaim · wacht op retest</span>',
+    accepted: '<span class="badge warn"%s>Breakout · wacht op retest</span>',
+    failed: '<span class="badge muted"%s>Breakout mislukt</span>',
+    planned: '<span class="badge muted"%s>Plan</span>',
+    expired: '<span class="badge muted"%s>Verlopen</span>',
+    invalid: '<span class="badge muted"%s>Vervallen</span>',
+    untradeable: '<span class="badge neg"%s>Niet tradeable</span>',
+  };
+  // Uitleg bij een status (zichtbaar als je over het label hovert).
+  function statusWhy(st, g) {
+    const bo = g && g.setup === "Breakout";
+    const n = (v) => (v === null || v === undefined || isNaN(v) ? "—" : num(v, 6));
+    const math =
+      g && g.entry != null && g.stopLoss != null && g.tp1 != null
+        ? ` Entry ${n(g.entry)}, stop ${n(g.stopLoss)} (risico ${n(Math.abs(g.entry - g.stopLoss))}), TP1 ${n(g.tp1)} (winst ${n(Math.abs(g.tp1 - g.entry))}).`
+        : "";
+    switch (st) {
+      case "trigger":
+        return bo ? "Breakout met acceptatie en de retest van de oude rand houdt (level flip). Dit is het instapmoment." : "Deviatie, reclaim én retest die houdt. Dit is het instapmoment.";
+      case "reclaim":
+        return "Er was een deviatie en de koers sloot weer binnen de range (reclaim). Wacht op de retest van het level voordat je instapt.";
+      case "accepted":
+        return "De koers sloot meerdere candles op rij buiten de range (acceptatie). Wacht op de retest van de oude rand; jaag de uitbraak niet na.";
+      case "failed":
+        return (g && g.reason) || "De koers sloot weer in de range: de breakout is mislukt.";
+      case "planned":
+        return "Een plan voor later: nog geen trigger.";
+      case "expired":
+        return ((g && g.reason) || (bo ? "De koers liep al naar TP1 zonder retest." : "De koers is al bij de mid (TP1): te laat om nog in te stappen.")) + math;
+      case "invalid":
+        return "Vervallen: deze setup is niet meer zichtbaar. De koers sloot opnieuw buiten de range, of de range is veranderd.";
+      case "untradeable": {
+        const rr = g && g.rr1 != null ? g.rr1 : null;
+        const base = (g && g.reason) || "Deze setup voldoet niet aan de regels.";
+        const rule = /R:R/.test(base)
+          ? ` Je wint tot TP1 minder dan je riskeert tot je stop: je hebt minimaal 1R tot TP1 nodig.${rr != null ? ` Hier is het ${rr.toFixed(2)}R.` : ""}`
+          : /diep/.test(base)
+          ? " De stop moet voorbij de deviatie, en die ligt zo ver weg dat de afstand tot TP1 niet meer in verhouding is."
+          : "";
+        return base + rule + math;
+      }
+      default:
+        return "";
+    }
+  }
+  const statusBadge = (st, g) => {
+    const why = statusWhy(st, g);
+    const attr = why ? ` data-tip="${esc(why)}" tabindex="0"` : "";
+    return BADGE[st] ? BADGE[st].replace("%s", attr) : esc(st);
+  };
 
   const time = (ms) => (ms ? new Date(ms).toLocaleTimeString("nl-NL", { hour: "2-digit", minute: "2-digit" }) : "—");
 
@@ -48,7 +89,7 @@
             (s) => `<tr data-href="#/notifier/${encodeURIComponent(s.id)}" class="${!s.seen && ["reclaim", "accepted", "trigger"].includes(s.status) ? "unseen" : ""}">
             <td>${date(s.detectedAt, true)}</td>
             <td><strong>${esc(N.title(s))}</strong></td>
-            <td>${statusBadge(s.status)}</td>
+            <td>${statusBadge(s.status, s)}</td>
             <td class="num">${price(s.entry)}</td><td class="num">${price(s.stopLoss)}</td><td class="num">${price(s.tp1)}</td>
             <td class="num">${s.rr1.toFixed(1)}</td></tr>`
           )
@@ -73,12 +114,12 @@
       .map(({ p, tf, r }) => {
         let txt = '<span class="muted">Nog niet gescand</span>';
         let since = "—", setupAt = "—";
-        const bo = r && r.breakout ? ` · <span class="nowrap">Breakout ${esc(r.breakout.signal.direction.toLowerCase())}: ${statusBadge(r.breakout.signal.status)}</span>` : "";
+        const bo = r && r.breakout ? ` · <span class="nowrap">Breakout ${esc(r.breakout.signal.direction.toLowerCase())}: ${statusBadge(r.breakout.signal.status, r.breakout.signal)}</span>` : "";
         if (r && r.error) txt = `<span class="neg">${esc(r.error)}</span>`;
         else if (r && !r.range) txt = `<span class="muted">Geen geldige range (trend of uitbraak)</span>${bo}`;
         else if (r && r.range) {
           const d = r.range.distribution;
-          txt = `Range ${price(r.range.low)} – ${price(r.range.high)} · mid ${price(r.range.mid)} · verdeling ${Math.round(d.lower * 100)}/${Math.round(d.upper * 100)} · ${r.signal ? statusBadge(r.signal.status) : '<span class="muted">geen setup</span>'}${bo}`;
+          txt = `Range ${price(r.range.low)} – ${price(r.range.high)} · mid ${price(r.range.mid)} · verdeling ${Math.round(d.lower * 100)}/${Math.round(d.upper * 100)} · ${r.signal ? statusBadge(r.signal.status, r.signal) : '<span class="muted">geen setup</span>'}${bo}`;
           since = stamp(r.range.startTime * 1000);
           if (r.signal) {
             const g = r.signal;
@@ -231,7 +272,7 @@
       <div class="page-head">
         <div>
           <a class="back" href="#/notifier">← Notifier</a>
-          <h1>${esc(head)} ${sig ? statusBadge(sig.status) : ""}</h1>
+          <h1>${esc(head)} ${sig ? statusBadge(sig.status, sig) : ""}</h1>
           <div class="muted">${sig ? esc(N.describe(sig)) : "Automatisch gevonden range op basis van de laatste push of dump."}</div>
         </div>
         <div class="row gap" id="d-actions"></div>
@@ -282,7 +323,7 @@
       : `<h2>Setup</h2><p class="muted">${range ? "Op dit moment geen deviatie + reclaim bij deze range." : "Geen geldige range gevonden: de markt trendt of is uitgebroken."}</p>`;
     // Range-setup in beeld, maar ook een breakout gevonden? Dan een verwijzing.
     if (!sig && res.breakout && signal !== res.breakout.signal)
-      root.querySelector("#d-levels").insertAdjacentHTML("beforeend", `<p class="small">Ook gevonden: <strong>breakout ${esc(res.breakout.signal.direction.toLowerCase())}</strong> ${statusBadge(res.breakout.signal.status)} uit de range ${price(res.breakout.range.low)} – ${price(res.breakout.range.high)}.</p>`);
+      root.querySelector("#d-levels").insertAdjacentHTML("beforeend", `<p class="small">Ook gevonden: <strong>breakout ${esc(res.breakout.signal.direction.toLowerCase())}</strong> ${statusBadge(res.breakout.signal.status, res.breakout.signal)} uit de range ${price(res.breakout.range.low)} – ${price(res.breakout.range.high)}.</p>`);
 
     root.querySelector("#d-range").innerHTML = range
       ? `<h2>Range</h2><dl class="dl">
@@ -372,7 +413,7 @@
                   <td>${date(h.atTime * 1000, true)}</td>
                   <td>${esc(h.signal.setup || "Reclaim")}</td>
                   <td><span class="dir ${h.signal.direction === "Long" ? "pos" : "neg"}">${esc(h.signal.direction)}</span></td>
-                  <td>${statusBadge(h.signal.status)}</td>
+                  <td>${statusBadge(h.signal.status, h.signal)}</td>
                   <td class="num">${num(h.signal.entry, 6)}</td><td class="num">${num(h.signal.stopLoss, 6)}</td><td class="num">${num(h.signal.tp1, 6)}</td>
                   <td class="num">${h.signal.rr1.toFixed(1)}</td>
                   <td>${h.signal.status === "trigger" ? outTxt[h.outcome.result] : `<span class="muted small" title="Zonder trigger had je deze setup niet gespeeld">geen trigger · ${esc({ sl: "SL", tp1: "TP1", tp2: "TP2", open: "open" }[h.outcome.result])}</span>`}</td>
