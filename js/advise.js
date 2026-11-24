@@ -25,6 +25,13 @@
   function remove(id) {
     S._save(KEY, all().filter((x) => x.id !== id));
   }
+  const existingAdvice = () => all(); // (in fromSignal heet de candle-lijst ook "all")
+  // Terugzetten na "Ongedaan maken" (op volgorde van aanmaken, nieuwste eerst).
+  function restore(items) {
+    const ids = new Set(all().map((x) => x.id));
+    const list = [...all(), ...(items || []).filter((x) => !ids.has(x.id))].sort((x, y) => y.createdAt - x.createdAt);
+    S._save(KEY, list);
+  }
 
   // ---------- meetwaarden uit de candles ----------
   function metrics(candles, range, signal) {
@@ -383,6 +390,13 @@
       ({ checks, verdict } = assess(m, signal, sig.tf));
     }
     const s = S.getSettings();
+    // Twee keer op dezelfde setup geklikt? Dan het advies van zojuist gebruiken in plaats van een dubbele.
+    const same = existingAdvice().find(
+      (x) =>
+        Date.now() - x.createdAt < 10 * 60000 && x.symbol === sig.symbol && x.tf === sig.tf && x.direction === sig.direction &&
+        (x.signal.setup || "Reclaim") === signal.setup && x.signal.status === signal.status && x.signal.entry === signal.entry && (x.asOf || null) === (opts.asOf || null)
+    );
+    if (same) return same;
     return save({
       id: "a" + Date.now().toString(36),
       fromSignal: sig.id,
@@ -403,5 +417,5 @@
     });
   }
 
-  TD.advise = { all, get, save, remove, metrics, assess, assessBreakout, calc, progress, fromSignal };
+  TD.advise = { all, get, save, remove, restore, metrics, assess, assessBreakout, calc, progress, fromSignal };
 })(window.TD);

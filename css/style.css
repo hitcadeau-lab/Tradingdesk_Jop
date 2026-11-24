@@ -447,3 +447,9 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 /* Tooltip (data-tip) */
 .tooltip { position: fixed; z-index: 1000; max-width: 360px; padding: 8px 10px; background: #1f2430; color: var(--text); border: 1px solid var(--border); border-radius: 6px; font-size: 12.5px; line-height: 1.45; box-shadow: 0 6px 20px rgba(0, 0, 0, .45); pointer-events: none; white-space: normal; }
 [data-tip] { cursor: help; }
+/* Advise-overzicht: verwijderen per kaart */
+.advice-item { position: relative; display: grid; }
+.advice-head { padding-right: 22px; }
+.advice-del { position: absolute; top: 8px; right: 8px; width: 26px; height: 26px; border-radius: 6px; color: var(--muted); }
+.advice-del:hover { color: var(--neg); background: rgba(239, 83, 80, .12); }
+.undo-bar { display: flex; align-items: center; gap: 10px; margin: 0 0 12px; padding: 8px 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 8px; }

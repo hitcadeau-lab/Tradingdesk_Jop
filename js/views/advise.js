@@ -31,20 +31,32 @@
   }
 
   // ---------------- lijst ----------------
+  let undo = null; // laatst verwijderde adviezen, voor "Ongedaan maken"
   function renderList(root) {
     teardown();
     const items = A.all();
+    const skips = items.filter((a) => a.verdict.key === "skip");
     root.innerHTML = `
       <div class="page-head">
         <div><h1>Advise</h1><div class="muted small">Setups uit de Notifier, beoordeeld op de range-trading-principes, met doorgerekende uitkomsten.</div></div>
-        <a class="btn" href="#/notifier">Naar de Notifier</a>
+        <div class="row gap">
+          ${skips.length ? `<button class="btn small" id="adv-del-skip">Alle ‘Niet spelen’ verwijderen (${skips.length})</button>` : ""}
+          ${items.length ? `<button class="btn small danger" id="adv-del-all">Alles verwijderen</button>` : ""}
+          <a class="btn" href="#/notifier">Naar de Notifier</a>
+        </div>
       </div>
+      ${
+        undo
+          ? `<div class="undo-bar">${undo.length === 1 ? "Advies verwijderd." : `${undo.length} adviezen verwijderd.`} <button class="btn small" id="adv-undo">Ongedaan maken</button></div>`
+          : ""
+      }
       ${
         items.length
           ? `<div class="advice-grid">${items
               .map(
-                (a) => `<a class="advice-card ${a.verdict.key}" href="#/advise/${encodeURIComponent(a.id)}">
-                  <div class="row gap between"><strong>${esc(title(a))}</strong>${verdictBadge(a.verdict)}</div>
+                (a) => `<div class="advice-item">
+                <a class="advice-card ${a.verdict.key}" href="#/advise/${encodeURIComponent(a.id)}">
+                  <div class="row gap between advice-head"><strong>${esc(title(a))}</strong>${verdictBadge(a.verdict)}</div>
                   <div class="muted small">${kindTag(a)} ${date(a.asOf ? a.asOf * 1000 : a.createdAt, true)} · ${a.checks.filter((c) => c.state === "pass").length}/${a.checks.filter((c) => c.state !== "info").length} principes in orde</div>
                   <dl class="mini">
                     <dt>Entry</dt><dd>${num(a.signal.entry, 6)}</dd>
@@ -52,11 +64,32 @@
                     <dt>TP1</dt><dd>${num(a.signal.tp1, 6)} <span class="muted">(${a.signal.rr1.toFixed(1)}R)</span></dd>
                     <dt>TP2</dt><dd>${num(a.signal.tp2, 6)} <span class="muted">(${a.signal.rr2.toFixed(1)}R)</span></dd>
                   </dl>
-                </a>`
+                </a>
+                <button class="icon advice-del" data-del="${esc(a.id)}" title="Verwijderen" aria-label="Advies ${esc(title(a))} verwijderen">×</button>
+              </div>`
               )
               .join("")}</div>`
           : `<div class="panel empty">Nog geen setups. Open een melding in de <a href="#/notifier">Notifier</a> en klik op <strong>Get advise</strong>.</div>`
       }`;
+
+    const drop = (ids) => {
+      const set = new Set(ids);
+      undo = A.all().filter((a) => set.has(a.id));
+      ids.forEach((id) => A.remove(id));
+      renderList(root);
+    };
+    root.querySelectorAll("[data-del]").forEach((b) => b.addEventListener("click", () => drop([b.dataset.del])));
+    const ds = root.querySelector("#adv-del-skip");
+    if (ds) ds.addEventListener("click", () => drop(skips.map((a) => a.id)));
+    const da = root.querySelector("#adv-del-all");
+    if (da) da.addEventListener("click", () => confirm(`Alle ${items.length} adviezen verwijderen?`) && drop(items.map((a) => a.id)));
+    const un = root.querySelector("#adv-undo");
+    if (un)
+      un.addEventListener("click", () => {
+        A.restore(undo);
+        undo = null;
+        renderList(root);
+      });
   }
 
   // ---------------- visualisaties ----------------
