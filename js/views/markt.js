@@ -91,7 +91,11 @@
           </div>
           <div class="markt-grid">
             <div class="panel chart-panel"><div id="tv-chart" class="tv-widget"></div><div id="range-summary" class="range-summary" hidden></div>
-              ${MK && MK.tvSymbol(selected) ? `<p class="muted small chart-src">TradingView toont ${esc(MK.tvSymbol(selected))}${MK.info(selected) && MK.info(selected).market === "stock" ? " (het aandeel zelf)" : ""}. Je handelt de Kraken-perpetual ${esc(shortSym(selected))}; <strong>Range 1H / 4H</strong> tonen de echte Kraken-koersen.</p>` : ""}</div>
+              ${(() => {
+                const w = wl.find((x) => x.symbol === selected);
+                const tv = MK && MK.tvSymbol(selected, w && w.market);
+                return tv ? `<p class="muted small chart-src">TradingView: ${esc(tv)}${/\.PM$/.test(tv) ? " (de Kraken-perpetual waarop je handelt)" : " (Kraken spot; je handelt de perpetual, die vrijwel gelijk loopt)"}. <strong>Range 1H / 4H</strong> tonen de Kraken Futures-koersen met de automatische range.</p>` : "";
+              })()}</div>
             <div class="panel ta-panel"><h2>Technische analyse</h2><div id="tv-ta" class="tv-widget ta"></div></div>
           </div>
           <div class="panel">
@@ -213,7 +217,8 @@
     chart.innerHTML = "";
     const sum = document.getElementById("range-summary");
     if (sum) sum.hidden = true;
-    const tv = TD.markets ? TD.markets.tvSymbol(symbol) : symbol;
+    const w = S.getWatchlist().find((x) => x.symbol === symbol);
+    const tv = TD.markets ? TD.markets.tvSymbol(symbol, w && w.market) : symbol;
     if (chartMode !== "tv" || !tv) {
       // Geen TradingView-symbool (pre-IPO): toon de range-grafiek met Kraken-koersen.
       if (!tv && chartMode === "tv") {

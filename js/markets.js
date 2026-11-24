@@ -3,20 +3,21 @@
 // TradingView-symbool (voor de grote grafiek) en de omzetting van oude tickers.
 window.TD = window.TD || {};
 (function (TD) {
-  // tv: symbool voor de TradingView-grafiek (null = geen beursnotering, alleen Kraken-data).
+  // tv: symbool voor de TradingView-grafiek. Crypto: Kraken spot (KRAKEN:BTCUSD), aandelen:
+  // de Kraken-perpetual zelf (KRAKEN:AMZNXUSD.PM).
   const LIST = [
     { sym: "PF_XBTUSD", name: "BTC", label: "Bitcoin", market: "crypto", tv: "KRAKEN:BTCUSD" },
     { sym: "PF_ETHUSD", name: "ETH", label: "Ether", market: "crypto", tv: "KRAKEN:ETHUSD" },
     { sym: "PF_SOLUSD", name: "SOL", label: "Solana", market: "crypto", tv: "KRAKEN:SOLUSD" },
-    { sym: "PF_AMZNXUSD", name: "AMZNx", label: "Amazon", market: "stock", tv: "NASDAQ:AMZN" },
-    { sym: "PF_AAPLXUSD", name: "AAPLx", label: "Apple", market: "stock", tv: "NASDAQ:AAPL" },
-    { sym: "PF_ANTXUSD", name: "ANTx", label: "Anthropic (pre-IPO)", market: "stock", tv: null, preIpo: true },
-    { sym: "PF_NVDAXUSD", name: "NVDAx", label: "Nvidia", market: "stock", tv: "NASDAQ:NVDA" },
-    { sym: "PF_QQQXUSD", name: "QQQx", label: "Invesco Nasdaq 100 ETF", market: "stock", tv: "NASDAQ:QQQ" },
-    { sym: "PF_GOOGLXUSD", name: "GOOGLx", label: "Alphabet (Google)", market: "stock", tv: "NASDAQ:GOOGL" },
-    { sym: "PF_METAXUSD", name: "METAx", label: "Meta", market: "stock", tv: "NASDAQ:META" },
-    { sym: "PF_GLDXUSD", name: "GLDx", label: "Goud (SPDR Gold ETF)", market: "stock", tv: "AMEX:GLD" },
-    { sym: "PF_TSLAXUSD", name: "TSLAx", label: "Tesla", market: "stock", tv: "NASDAQ:TSLA" },
+    { sym: "PF_AMZNXUSD", name: "AMZNx", label: "Amazon", market: "stock", tv: "KRAKEN:AMZNXUSD.PM" },
+    { sym: "PF_AAPLXUSD", name: "AAPLx", label: "Apple", market: "stock", tv: "KRAKEN:AAPLXUSD.PM" },
+    { sym: "PF_ANTXUSD", name: "ANTx", label: "Anthropic (pre-IPO)", market: "stock", tv: "KRAKEN:ANTXUSD.PM", preIpo: true },
+    { sym: "PF_NVDAXUSD", name: "NVDAx", label: "Nvidia", market: "stock", tv: "KRAKEN:NVDAXUSD.PM" },
+    { sym: "PF_QQQXUSD", name: "QQQx", label: "Invesco Nasdaq 100 ETF", market: "stock", tv: "KRAKEN:QQQXUSD.PM" },
+    { sym: "PF_GOOGLXUSD", name: "GOOGLx", label: "Alphabet (Google)", market: "stock", tv: "KRAKEN:GOOGLXUSD.PM" },
+    { sym: "PF_METAXUSD", name: "METAx", label: "Meta", market: "stock", tv: "KRAKEN:METAXUSD.PM" },
+    { sym: "PF_GLDXUSD", name: "GLDx", label: "Goud (SPDR Gold ETF)", market: "stock", tv: "KRAKEN:GLDXUSD.PM" },
+    { sym: "PF_TSLAXUSD", name: "TSLAx", label: "Tesla", market: "stock", tv: "KRAKEN:TSLAXUSD.PM" },
   ];
   const BY_SYM = new Map(LIST.map((m) => [m.sym, m]));
   const ALIAS = { BTC: "XBT" };
@@ -38,12 +39,12 @@ window.TD = window.TD || {};
     const base = s.slice(3).replace(/USD$/, "");
     return UNALIAS[base] || base;
   }
-  // TradingView-symbool voor de grote grafiek (null = niet beschikbaar).
-  function tvSymbol(t) {
+  // TradingView-symbool voor de grote grafiek. market = "stock" voor xStocks die je zelf toevoegde.
+  function tvSymbol(t, market) {
     if (!isKraken(t)) return t;
     const m = info(t);
     if (m) return m.tv;
-    return "KRAKEN:" + short(t) + "USD";
+    return market === "stock" ? "KRAKEN:" + symOf(t).slice(3) + ".PM" : "KRAKEN:" + short(t) + "USD";
   }
 
   // Oude tickers omzetten naar Kraken: "BINANCE:SOLUSDT" → "KRAKEN:PF_SOLUSD",
