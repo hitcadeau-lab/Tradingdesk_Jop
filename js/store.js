@@ -284,6 +284,14 @@ window.TD = window.TD || {};
     return t.exitDate || t.entryDate || t.createdAt || "";
   }
 
+  // Fees van een trade: zelf ingevuld, of (papier-trade) wat Kraken in de simulatie rekende.
+  function tradeFees(t) {
+    const f = num(t.fees);
+    if (f !== null) return f;
+    const plan = t.broker && TD.paper ? TD.paper.planForTrade(t.id) : null;
+    return plan && plan.fees > 0 ? Math.round(plan.fees * 100) / 100 : null;
+  }
+
   // ---------- Portfolio (zelfde logica als het Journal + Dashboard) ----------
   function computePortfolio() {
     const settings = getSettings();
@@ -339,7 +347,20 @@ window.TD = window.TD || {};
 
     const open = trades.filter((t) => t.status === "open");
 
+    // Fees: gesloten trades (PnL is al ná fees) en wat open posities al betaalden (entry-fee).
+    const feeOf = (list) => list.map(tradeFees).filter((v) => v !== null);
+    const closedFees = sum(feeOf(closed));
+    const openFees = sum(feeOf(open));
+    const withFees = feeOf(closed).length;
+    const grossWin = sum(taken.map((t) => (num(t.pnl) || 0) + (tradeFees(t) || 0)).filter((v) => v > 0));
+
     return {
+      fees: closedFees + openFees,
+      closedFees,
+      openFees,
+      tradesWithFees: withFees,
+      avgFee: withFees ? closedFees / withFees : 0,
+      feeShare: grossWin > 0 ? closedFees / grossWin : null, // deel van de winst vóór fees dat naar fees ging
       settings,
       startingCapital: start,
       balance,
@@ -465,7 +486,7 @@ window.TD = window.TD || {};
       "#", "Date", "Pair", "Direction", "Setup / Range", "Outcome", "Followed Plan?", "Risk %",
       "Start Balance", "PnL ($)", "End Balance", "Return %", "R Multiple", "Lesson / Key Takeaway",
       "Chart — Range", "Chart — Trigger", "Trade type", "Entry", "Stoploss", "TP1", "TP2", "TP3",
-      "Checklist", "Status", "Range TF", "Range High", "Range Low", "Mid", "Trigger",
+      "Checklist", "Status", "Range TF", "Range High", "Range Low", "Mid", "Trigger", "Fees ($)",
     ];
     const trades = getTrades().slice().sort((a, b) => sortKey(a).localeCompare(sortKey(b)));
     const esc = (v) => {
@@ -483,7 +504,7 @@ window.TD = window.TD || {};
           row.endBalance ?? "", row.returnPct ?? "", row.r ?? "", t.lesson || "", t.chartRange || "",
           t.chartTrigger || "", t.tradeType || "", t.entry ?? "", t.stopLoss ?? "", t.tp1 ?? "",
           t.tp2 ?? "", t.tp3 ?? "", `${sc.passed}/${sc.total}`, t.status,
-          t.rangeTf || "", t.rangeHigh ?? "", t.rangeLow ?? "", rangeMid(t) ?? "", t.trigger || "",
+          t.rangeTf || "", t.rangeHigh ?? "", t.rangeLow ?? "", rangeMid(t) ?? "", t.trigger || "", tradeFees(t) ?? "",
         ]
           .map(esc)
           .join(",")
@@ -494,7 +515,7 @@ window.TD = window.TD || {};
 
   TD.store = {
     OPTIONS, CHECKLIST, checkPassed, checklistScore,
-    getSettings, setSettings,
+    getSettings, setSettings, tradeFees,
     getTrades, getTrade, saveTrade, deleteTrade,
     rOf, targets, totalRR, rangeMid, timeInTrade, suggestedPnl, riskAmount, positionSize,
     computePortfolio,

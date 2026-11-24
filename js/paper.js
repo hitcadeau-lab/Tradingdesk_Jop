@@ -204,6 +204,7 @@
       outcome,
       exitDate: d.toISOString().slice(0, 16),
       pnl: Math.round(net * 100) / 100,
+      fees: Math.round(plan.fees * 100) / 100,
       lesson: tr.lesson || (note ? note + " " : ""),
     });
   }

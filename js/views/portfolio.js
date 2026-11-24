@@ -71,6 +71,14 @@
         ${kpi("Slechtste trade", money(p.worst), signClass(p.worst))}
         ${kpi("Plan adherence", pct(p.planAdherence), "", "“Followed plan?” = Yes")}
         ${kpi("Open risico", money(p.openRisk), "", "som van risico open trades")}
+        ${kpi(
+          "Fees betaald",
+          money(-p.fees),
+          p.fees > 0 ? "neg" : "",
+          p.fees > 0
+            ? `gem. ${money(p.avgFee)} per trade${p.feeShare !== null ? ` · ${pct(p.feeShare)} van je winst vóór fees` : ""}${p.openFees > 0 ? ` · ${money(p.openFees)} in open posities` : ""}`
+            : "papier-trades automatisch, andere trades vul je in bij het sluiten"
+        )}
       </div>
       <div id="kr-portfolio"></div>
 
@@ -121,7 +129,7 @@
             ? `<div class="table-wrap"><table class="table clickable"><thead><tr>
             <th>#</th><th>Datum</th><th>Pair</th><th>Richting</th><th>Setup</th><th>Uitkomst</th><th>Plan?</th>
             <th class="num">Risk %</th><th class="num">Start</th><th class="num">PnL</th><th class="num">Eind</th>
-            <th class="num">Return</th><th class="num">R</th><th>Checks</th><th>Les</th></tr></thead><tbody>
+            <th class="num">Fees</th><th class="num">Return</th><th class="num">R</th><th>Checks</th><th>Les</th></tr></thead><tbody>
             ${journal
               .map((t, i) => {
                 const row = p.rows.get(t.id);
@@ -132,6 +140,7 @@
                   <td class="num">${row ? money(row.startBalance) : "—"}</td>
                   <td class="num ${signClass(+t.pnl)}">${t.status === "closed" ? money(+t.pnl) : "—"}</td>
                   <td class="num">${row ? money(row.endBalance) : "—"}</td>
+                  <td class="num muted">${S.tradeFees(t) !== null ? money(-S.tradeFees(t)) : "—"}</td>
                   <td class="num ${signClass(row?.returnPct)}">${row ? pct(row.returnPct, 2) : "—"}</td>
                   <td class="num ${signClass(row?.r)}">${row ? r(row.r) : "—"}</td>
                   <td>${TD.views.trades.scoreBadge(t)}</td>

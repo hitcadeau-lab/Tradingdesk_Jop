@@ -394,7 +394,8 @@
       </section>`;
     return `<section class="panel ex-section">${head}
       <dl class="dl"><dt>Uitkomst</dt><dd>${esc(t.outcome || "—")}</dd><dt>Exit</dt><dd>${esc(TD.util.stamp(t.exitDate) || "—")}</dd>
-      <dt>PnL</dt><dd class="${signClass(+t.pnl)}">${money(+t.pnl)} <span class="muted small">via Kraken, inclusief fees</span></dd></dl>
+      <dt>PnL</dt><dd class="${signClass(+t.pnl)}">${money(+t.pnl)} <span class="muted small">via Kraken, inclusief fees</span></dd>
+      <dt>Fees</dt><dd>${S.tradeFees(t) !== null ? money(-S.tradeFees(t)) : "—"}</dd></dl>
       <div class="grid g4">
         <label>Plan gevolgd?<select name="followedPlan"><option value="">— kies —</option>${opt(S.OPTIONS.followedPlan, t.followedPlan)}</select></label>
         <label class="span4">Les / key takeaway<textarea name="lesson" rows="3">${esc(t.lesson || "")}</textarea></label>
@@ -559,6 +560,7 @@
               <span class="muted small" id="pnl-suggest"></span>
             </label>
             <label>Plan gevolgd?<select name="followedPlan"><option value="">— kies —</option>${opt(S.OPTIONS.followedPlan, t.followedPlan)}</select></label>
+            <label>Fees (${esc(S.getSettings().currency)}) <span class="muted small">optioneel, al verwerkt in je PnL</span><input type="number" step="any" min="0" name="fees" value="${esc(t.fees ?? "")}" placeholder="bijv. 1,25"></label>
             <label class="span4">Les / key takeaway<textarea name="lesson" rows="3">${esc(t.lesson || "")}</textarea></label>
           </div>
         </section>`}
@@ -650,7 +652,7 @@
       const fd = new FormData(form);
       const o = { ...t };
       for (const [k, v] of fd.entries()) o[k] = typeof v === "string" ? v.trim() : v;
-      for (const k of ["entry", "stopLoss", "tp1", "tp2", "tp3", "riskPct", "pnl", "rangeHigh", "rangeLow", "rangeFrom", "rangeTo"]) o[k] = o[k] === "" || o[k] === undefined ? null : +o[k];
+      for (const k of ["entry", "stopLoss", "tp1", "tp2", "tp3", "riskPct", "pnl", "fees", "rangeHigh", "rangeLow", "rangeFrom", "rangeTo"]) o[k] = o[k] === "" || o[k] === undefined ? null : +o[k];
       o.ticker = (o.ticker || "").toUpperCase().replace(/\s+/g, "");
       const w = wl.find((x) => x.symbol === o.ticker);
       o.market = w ? w.market : o.market || (/USDT?$|BTC$|PERP/.test(o.ticker) ? "crypto" : "stock");
@@ -660,6 +662,7 @@
         o.exitDate = "";
         o.outcome = "";
         o.pnl = null;
+        o.fees = null;
         o.followedPlan = "";
       }
       return o;
@@ -818,7 +821,7 @@
       const o = readTrade();
       if (editing && editing.broker) {
         const fresh = S.getTrade(editing.id) || editing;
-        for (const k of ["status", "outcome", "exitDate", "pnl"]) o[k] = fresh[k];
+        for (const k of ["status", "outcome", "exitDate", "pnl", "fees"]) o[k] = fresh[k];
         if (o.status !== "closed") o.followedPlan = "";
       }
       const passed = paintChecklist();
@@ -1032,6 +1035,7 @@
           <h2>Resultaat</h2>
           <dl class="dl">
             <dt>Uitkomst</dt><dd>${esc(t.outcome)}</dd>
+            ${S.tradeFees(t) !== null ? `<dt>Fees</dt><dd>${money(-S.tradeFees(t))} <span class="muted small">al verwerkt in je PnL</span></dd>` : ""}
             <dt>Plan gevolgd?</dt><dd>${esc(t.followedPlan || "—")}</dd>
             <dt>Saldo voor → na</dt><dd>${row ? money(row.startBalance) + " → " + money(row.endBalance) : "—"}</dd>
           </dl>
