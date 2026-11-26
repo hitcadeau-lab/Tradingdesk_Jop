@@ -217,5 +217,28 @@ window.TD = window.TD || {};
     return s + "</svg>";
   }
 
-  TD.charts = { rng, candlesFromPath, rangePath, candleSVG, rsiSVG, equitySVG };
+  // Dezelfde schaal als candleSVG (zonder lijnen/markers), om klikken om te rekenen naar candle en prijs.
+  function candleGeom(candles, { width = 720, height = 340 } = {}) {
+    const padL = 10, padR = 96, padT = 16, padB = 22;
+    let min = Infinity, max = -Infinity;
+    for (const c of candles) {
+      min = Math.min(min, c.l);
+      max = Math.max(max, c.h);
+    }
+    const m = (max - min) * 0.08 || 1;
+    min -= m;
+    max += m;
+    const w = width - padL - padR, h = height - padT - padB;
+    const step = w / candles.length;
+    return {
+      width, height, padL, padR, padT, padB, min, max, n: candles.length,
+      x: (i) => padL + step * i + step / 2,
+      y: (p) => padT + ((max - p) / (max - min)) * h,
+      i: (x) => (x - padL - step / 2) / step,
+      p: (y) => max - ((y - padT) / h) * (max - min),
+      right: width - padR,
+    };
+  }
+
+  TD.charts = { rng, candlesFromPath, rangePath, candleSVG, candleGeom, rsiSVG, equitySVG };
 })(window.TD);

@@ -1630,7 +1630,52 @@
       <span>Beste reeks <strong>${s.best}</strong></span>`;
   }
 
+  // Bovenaan: kiezen tussen opdrachten (multiple choice) en zelf tekenen.
+  function modeHTML() {
+    return `<div class="view-toggle school-mode" role="group" aria-label="Leerschool-onderdeel">
+      <button type="button" data-mode="quiz" class="${state.mode !== "draw" ? "active" : ""}">Opdrachten</button>
+      <button type="button" data-mode="draw" class="${state.mode === "draw" ? "active" : ""}">✏️ Zelf tekenen</button>
+    </div>`;
+  }
+  function bindMode(root) {
+    root.querySelectorAll(".school-mode [data-mode]").forEach((b) =>
+      b.addEventListener("click", () => {
+        state.mode = b.dataset.mode;
+        try {
+          localStorage.setItem("td.school.mode", state.mode);
+        } catch {}
+        render(root);
+      })
+    );
+  }
+  function renderDraw(root) {
+    const s = S.getSchool();
+    root.innerHTML = `
+      <div class="page-head">
+        <div class="row gap"><h1>Leerschool</h1>${modeHTML()}</div>
+        <div class="row gap">
+          <div class="school-stats">${statsHTML(s)}</div>
+        </div>
+      </div>
+      <p class="muted small">Teken zelf de range, de neklijn of de trendlijnen van een patroon. Daarna leggen we de juiste lijnen eroverheen en beoordelen we elke lijn.</p>
+      <div id="draw-box"></div>`;
+    bindMode(root);
+    TD.drawSchool.render(root.querySelector("#draw-box"), (ok) => {
+      const st = S.recordAnswer("draw", ok);
+      const el = root.querySelector(".school-stats");
+      if (el) el.innerHTML = statsHTML(st, ok);
+    });
+  }
+
   function render(root) {
+    if (state.mode === undefined) {
+      try {
+        state.mode = localStorage.getItem("td.school.mode") || "quiz";
+      } catch {
+        state.mode = "quiz";
+      }
+    }
+    if (state.mode === "draw" && TD.drawSchool) return renderDraw(root);
     if (!state.q || !state.fn) newQuestion();
     const s = S.getSchool();
     const q = state.q;
@@ -1641,7 +1686,7 @@
 
     root.innerHTML = `
       <div class="page-head">
-        <h1>Leerschool</h1>
+        <div class="row gap"><h1>Leerschool</h1>${modeHTML()}</div>
         <div class="row gap">
           <div class="school-stats">${statsHTML(s)}</div>
           <button class="btn small" id="reset">Reset score</button>
@@ -1751,6 +1796,7 @@
         window.scrollTo({ top: 0, behavior: "smooth" });
       }
     });
+    bindMode(root);
     root.querySelector("#calc").addEventListener("click", () => TD.calculator && TD.calculator.toggle());
     root.querySelectorAll("[data-level]").forEach((c) =>
       c.addEventListener("click", () => {
@@ -1778,5 +1824,5 @@
   }
 
   TD.views = TD.views || {};
-  TD.views.leerschool = { render, _templates: T, CATS, LEVELS, levelOf };
+  TD.views.leerschool = { render, _templates: T, CATS, LEVELS, levelOf, _draw: { PATTERNS, drawPattern, makeRange, rangePath, build, pick, shuffle } };
 })(window.TD);
