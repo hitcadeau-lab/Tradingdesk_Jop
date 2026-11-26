@@ -709,22 +709,30 @@
     path.push({ price: R.high - R.h * 0.22, bars: 4, clampHigh: R.high + R.h * 0.2 });
     path.push({ price: R.high - R.h * 0.3, bars: 2, clampHigh: R.high - R.h * 0.12 });
     let candles = build(rand, R, path);
-    if (short) candles = mirror(candles, R);
+    // Je stop zoals het systeem hem zet: net terug binnen de oude range.
+    let stop = R.high - R.h * 0.11;
+    if (short) {
+      candles = mirror(candles, R);
+      stop = mp(R, stop);
+    }
     const lvl = short ? "range low" : "range high";
     const dir = short ? "short" : "long";
     const opp = short ? "long" : "short";
     return {
       cat: "setup",
       title: "Mislukte breakout",
-      prompt: `Je zat ${dir} op een breakout door de ${lvl}. Nu sluit de koers weer duidelijk binnen de oude range. Wat doe je?`,
-      svg: C.candleSVG(candles, { lines: rangeLines(R) }),
+      prompt: `Je zat <strong>${dir}</strong> op een breakout door de ${lvl}, met je stop net terug binnen de oude range. De koers kwam terug, <strong>je stop is geraakt</strong> en hij sluit nu weer duidelijk binnen de range. Wat doe je nu?`,
+      svg: C.candleSVG(candles, { lines: [...rangeLines(R), { price: stop, label: "Stop (geraakt)", color: "#ef5350", dash: false }] }),
       options: shuffle(rand, [
-        ok("De breakout is mislukt: eruit (je stop) en kijken naar een reclaim de andere kant op", `Goed. Terug binnen de range betekent dat de uitbraak een deviatie was. Je idee klopt niet meer, dus je neemt je verlies. Een mislukte breakout is vaak juist een ${opp}-setup: deviatie + reclaim van de ${lvl}.`),
-        no("Bijkopen, nu is hij goedkoper", "Bijkopen in een trade die ongeldig is, vergroot je verlies. Je stop staat er niet voor niets."),
-        no("Stop verder weg zetten en hopen", "Je stop verplaatsen omdat de trade tegenzit, is precies wat de checklist verbiedt. De breakout is mislukt."),
-        no("Niets doen, het blijft een breakout", "Een breakout bestaat zolang de koers buiten de range blijft. Sluit hij duidelijk weer binnen, dan is het geen breakout meer."),
+        ok(
+          `Niet opnieuw ${dir}: de breakout is mislukt. Kijk naar een ${opp}-setup (deviatie + reclaim van de ${lvl})`,
+          `Goed. Je stop deed zijn werk: je verlies is 1R, zoals gepland. Terug binnen de range betekent dat de uitbraak een deviatie was. Zo'n mislukte breakout is vaak juist een ${opp}-setup: de koers reclaimt de ${lvl}, en na een retest heb je je trigger.`
+        ),
+        no(`Direct opnieuw ${dir}, hij breekt vast nog een keer uit`, "Wraak-traden (revenge trading). De breakout is net mislukt: dat is informatie, geen reden om het nog eens te proberen. Wacht op een nieuwe, geldige setup."),
+        no("Volgende keer geen stop, dan was ik er nog in gebleven", "De stop beschermde je juist: de koers sloot duidelijk binnen de range, de breakout was mislukt. Zonder stop kan één mislukte breakout veel meer kosten dan 1R."),
+        no("Niets: het blijft een breakout, de koers gaat zo weer verder", "Een breakout bestaat zolang de koers buiten de range blijft. Sluit hij duidelijk weer binnen, dan is het geen breakout meer."),
       ]),
-      lesson: "Sluit de koers na een breakout weer duidelijk in de range, dan was het een deviatie. Neem je verlies en kijk naar een reclaim de andere kant op.",
+      lesson: "Bij een breakout staat je stop net terug binnen de oude range. Wordt hij geraakt en sluit de koers weer binnen, dan was het een deviatie: accepteer je 1R verlies en kijk naar een reclaim de andere kant op.",
     };
   });
 
