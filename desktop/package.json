@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.13.0",
+  "version": "1.14.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 5,
     "webMinShell": 5,
-    "releaseNotes": "Marktbeeld na afloop: bij gesloten trades de grafiek van entry tot exit, met waar je entry gevuld werd en welke TP's, stop of break-even geraakt zijn, plus een tijdlijn."
+    "releaseNotes": "Leerschool: niveaus Beginner, Medior en Professional, nieuwe rekenopdrachten (liquidatie, winrate, expectancy, positiegrootte met fees), minder herhaling, een rekenmachine en RSI-divergentie met RSI-grafiek."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
