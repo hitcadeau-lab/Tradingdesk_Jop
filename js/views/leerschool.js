@@ -1386,6 +1386,28 @@
     remember(state.fn.name);
     state.q = state.fn(rand);
     state.answered = false;
+    // Geschiedenis voor "Vorige": opdracht + seed is genoeg om hem exact opnieuw te maken.
+    hist.splice(histPos + 1);
+    hist.push({ name: state.fn.name, seed: state.seed, chosen: null });
+    if (hist.length > 100) hist.shift();
+    histPos = hist.length - 1;
+  }
+  const hist = [];
+  let histPos = -1;
+  // Naar een eerdere (of latere) opdracht uit de geschiedenis.
+  function goTo(i) {
+    const h = hist[i];
+    if (!h) return false;
+    const fn = T.find((f) => f.name === h.name);
+    if (!fn) return false;
+    const rand = C.rng(h.seed);
+    pick(rand, [0]); // dezelfde stap als bij het kiezen van de opdracht, zodat de seed gelijk loopt
+    state.fn = fn;
+    state.seed = h.seed;
+    state.q = fn(rand);
+    state.answered = h.chosen !== null;
+    histPos = i;
+    return true;
   }
 
   function statsHTML(s, verdict) {
@@ -1448,8 +1470,10 @@
         </div>
         <div class="lesson-box" id="lesson" hidden><strong>Les:</strong> ${esc(q.lesson)}</div>
         <div class="quiz-actions">
+          <button class="btn" id="prev" ${histPos > 0 ? "" : "disabled"} title="Vorige opdracht">← Vorige</button>
           <button class="btn" id="calc" title="Rekenmachine openen">🧮 Rekenmachine</button>
-          <button class="btn primary" id="next">Overslaan →</button>
+          <span class="muted small" id="replay-note">${state.answered ? "Al beantwoord: telt niet opnieuw mee." : ""}</span>
+          <button class="btn primary" id="next">${state.answered ? "Volgende opdracht →" : "Overslaan →"}</button>
         </div>
       </section>
 
@@ -1472,28 +1496,43 @@
         <p class="muted small">Nog niet in deze transcripts: trendlijnen als trigger binnen de range en ‘red zones’. Die modules kunnen er later bij.</p>
       </details>`;
 
+    // Antwoord tonen: goed/fout per optie en de uitleg.
+    const reveal = (idx) => {
+      root.querySelectorAll(".answer").forEach((x) => {
+        const o = q.options[+x.dataset.i];
+        x.disabled = true;
+        x.classList.add(o.ok ? "correct" : "wrong");
+        if (+x.dataset.i === idx) x.classList.add("chosen");
+        x.querySelector(".a-why").hidden = false;
+      });
+      root.querySelector("#lesson").hidden = false;
+      root.querySelector("#next").textContent = "Volgende opdracht →";
+    };
+    const h = hist[histPos];
+    if (state.answered && h && h.chosen !== null) reveal(h.chosen);
     root.querySelectorAll(".answer").forEach((b) =>
       b.addEventListener("click", () => {
         if (state.answered) return;
         state.answered = true;
-        const chosen = q.options[+b.dataset.i];
+        const idx = +b.dataset.i;
+        if (hist[histPos]) hist[histPos].chosen = idx;
+        const chosen = q.options[idx];
         const st = S.recordAnswer(q.cat, chosen.ok);
-        root.querySelectorAll(".answer").forEach((x) => {
-          const o = q.options[+x.dataset.i];
-          x.disabled = true;
-          x.classList.add(o.ok ? "correct" : "wrong");
-          if (x === b) x.classList.add("chosen");
-          x.querySelector(".a-why").hidden = false;
-        });
-        root.querySelector("#lesson").hidden = false;
-        root.querySelector("#next").textContent = "Volgende opdracht →";
+        reveal(idx);
         root.querySelector(".school-stats").innerHTML = statsHTML(st, chosen.ok);
       })
     );
     root.querySelector("#next").addEventListener("click", () => {
-      newQuestion();
+      // Eerst vooruit door de opdrachten waar je naar terug was gegaan; daarna een nieuwe.
+      if (!(histPos < hist.length - 1 && goTo(histPos + 1))) newQuestion();
       render(root);
       window.scrollTo({ top: 0, behavior: "smooth" });
+    });
+    root.querySelector("#prev").addEventListener("click", () => {
+      if (histPos > 0 && goTo(histPos - 1)) {
+        render(root);
+        window.scrollTo({ top: 0, behavior: "smooth" });
+      }
     });
     root.querySelector("#calc").addEventListener("click", () => TD.calculator && TD.calculator.toggle());
     root.querySelectorAll("[data-level]").forEach((c) =>
