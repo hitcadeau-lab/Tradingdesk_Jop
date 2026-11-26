@@ -974,7 +974,7 @@
     const barsPer = opts.bars || 3;
     const path = piv.slice(1).map((y, k) => ({ price: Y(y), bars: k === 0 ? 5 : barsPer, exact: true, wickTo: Y(y) }));
     const start = Y(piv[0]);
-    const candles = C.candlesFromPath(rand, start, [...(opts.before || []), ...path], { vol: ((hi - lo) / start) * 0.018 });
+    const candles = C.candlesFromPath(rand, start, [...(opts.before || []), ...path], { vol: ((hi - lo) / start) * 0.018 * (opts.noise || 1) });
     const off = (opts.before || []).reduce((a, x) => a + x.bars, 0);
     const idx = [off - 1 < 0 ? 0 : off - 1, ...ends(path).map((i) => i + off)];
     // Lijnen lopen tot de uitbraak (of tot het eind als het patroon nog niet uitgebroken is).

@@ -5,25 +5,91 @@ window.TD = window.TD || {};
 (function (TD) {
   const { esc } = TD.util;
   const C = TD.charts;
-  const TOL_GOOD = 0.06, TOL_CLOSE = 0.12; // afwijking als deel van de hoogte van het patroon
+  // Afwijking als deel van de hoogte van het patroon; Professional is strenger.
+  const TOL = { beginner: [0.06, 0.12], medior: [0.06, 0.12], pro: [0.05, 0.1] };
+  const LEVELS = { beginner: "Beginner", medior: "Medior", pro: "Professional" };
+  const NOISE = { beginner: 1, medior: 1.8, pro: 2.6 };
+  const lvlOf = () => state.level || "beginner";
 
   const KINDS = { range: "Range tekenen", find: "Ranges zoeken (lange grafiek)", neck: "Neklijn", trend: "Trendlijnen & driehoeken" };
-  let state = { kind: "", task: null, lines: [], pending: null, tool: "h", checked: null, seed: null };
+  let state = { kind: "", level: "", task: null, lines: [], pending: null, tool: "h", checked: null, seed: null };
+  try {
+    state.level = localStorage.getItem("td.draw.level") || "beginner";
+  } catch {
+    state.level = "beginner";
+  }
+
+  // Consolidatie binnen een range [lo, hi], startend aan de ene kant. Hoe hoger het niveau, hoe
+  // rommeliger: rakingen die de rand niet halen, meer lonten erbuiten en (Professional) deviaties
+  // waarbij een candle buiten de range sluit en de koers daarna terugkomt.
+  function consolidation(rand, lo, hi, startTop, level) {
+    const h = hi - lo, out = [];
+    const r = (a, b) => a + rand() * (b - a);
+    const nT = level === "beginner" ? 4 + Math.floor(rand() * 2) : level === "medior" ? 4 + Math.floor(rand() * 3) : 4 + Math.floor(rand() * 4);
+    const reach = level === "beginner" ? [0.04, 0.12] : level === "medior" ? [0.03, 0.3] : [0.02, 0.38];
+    const sfpP = level === "beginner" ? 0.25 : level === "medior" ? 0.4 : 0.45;
+    const sfpD = level === "beginner" ? 0.04 : level === "medior" ? 0.07 : 0.1;
+    let atTop = startTop;
+    for (let t = 0; t < nT; t++) {
+      const toTop = !atTop;
+      if (level === "pro" && rand() < 0.3) {
+        // Deviatie: sluit even buiten de rand, daarna terug binnen (reclaim).
+        const dev = h * r(0.05, 0.1);
+        out.push({ price: toTop ? hi + dev : lo - dev, bars: 3 + Math.floor(rand() * 3), clampHigh: hi + h * 0.14, clampLow: lo - h * 0.14 });
+        out.push({ price: toTop ? hi - h * r(0.08, 0.2) : lo + h * r(0.08, 0.2), bars: 2 + Math.floor(rand() * 2), clampHigh: hi + h * 0.14, clampLow: lo - h * 0.14 });
+        atTop = toTop;
+        continue;
+      }
+      const sfp = rand() < sfpP;
+      out.push({
+        price: toTop ? hi - h * r(reach[0], reach[1]) : lo + h * r(reach[0], reach[1]),
+        bars: level === "beginner" ? 4 + Math.floor(rand() * 4) : 3 + Math.floor(rand() * 7),
+        wickTo: toTop ? hi + (sfp ? h * sfpD : 0) : lo - (sfp ? h * sfpD : 0),
+        clampHigh: hi + h * (sfpD + 0.02),
+        clampLow: lo - h * (sfpD + 0.02),
+      });
+      atTop = toTop;
+    }
+    return out;
+  }
+  // Een push van `from` naar `to`; bij Medior/Professional met tussentijdse pullbacks (en bij
+  // Professional soms een korte pauze die op een range lijkt, maar het niet is: de push gaat door).
+  function pushPath(rand, from, to, level) {
+    const bars = 6 + Math.floor(rand() * 4);
+    if (level === "beginner") return [{ price: to, bars, exact: true }];
+    const d = to - from, out = [];
+    const legs = level === "medior" ? 2 : 3;
+    for (let k = 1; k <= legs; k++) {
+      const target = from + (d * k) / legs;
+      out.push({ price: target, bars: 2 + Math.floor(rand() * 3), exact: k === legs });
+      if (k < legs) {
+        const back = d * (level === "medior" ? 0.12 : 0.2) * (0.6 + rand() * 0.6);
+        if (level === "pro" && rand() < 0.4) out.push({ price: target - back * 0.4, bars: 3 }, { price: target - back * 0.1, bars: 2 }, { price: target - back * 0.5, bars: 2 });
+        else out.push({ price: target - back, bars: 2 + Math.floor(rand() * 2) });
+      }
+    }
+    return out;
+  }
 
   // ---------- opdrachten ----------
-  function makeTask(seed, kind) {
+  function makeTask(seed, kind, level = "beginner") {
     const D = TD.views.leerschool._draw;
     const rand = C.rng(seed);
     const k = kind || D.pick(rand, ["range", "find", "find", "neck", "trend", "trend"]);
-    if (k === "find") return findTask(rand, D);
+    const task = build(k);
+    task.level = level;
+    task.tol = TOL[level];
+    return task;
+    function build(k) {
+    if (k === "find") return findTask(rand, D, level);
     if (k === "range") {
       const R = D.makeRange(rand);
-      const candles = D.build(rand, R, D.rangePath(rand, R, 6));
+      const candles = C.candlesFromPath(rand, R.mid, [{ price: R.mid, bars: 3 }, ...consolidation(rand, R.low, R.high, rand() < 0.5, level)], { vol: R.vol * NOISE[level] });
       return {
         kind: k, candles, height: R.h,
         title: "Teken de range",
         prompt: "Teken de <strong>range high</strong> en de <strong>range low</strong> met twee horizontale lijnen.",
-        hint: "Begin bij de uitersten: de hoogste en laagste punten waar de koers steeds keert. Een enkele lont erbuiten mag (swing failure).",
+        hint: level === "pro" ? "Let op deviaties: een paar candles die buiten de rand sluiten en daarna terugkomen, horen niet bij de range. Teken de rand waar de koers het vaakst keert." : "Begin bij de uitersten: de hoogste en laagste punten waar de koers steeds keert. Een enkele lont erbuiten mag (swing failure).",
         truth: [
           { name: "Range high", h: R.high },
           { name: "Range low", h: R.low },
@@ -36,7 +102,8 @@ window.TD = window.TD || {};
     const key = D.pick(rand, keys);
     const P = D.PATTERNS[key];
     const upto = P.breakAt ? P.breakAt + (k === "neck" ? 1 : 0) : P.piv.length;
-    const d = D.drawPattern(rand, key, 100, 140, { upto });
+    const d = D.drawPattern(rand, key, 100, 140, { upto, noise: NOISE[level] });
+    const named = level !== "pro"; // Professional: de naam van het patroon zie je pas na het controleren
     const span = [Math.max(0, d.idx[1] - 1), d.candles.length - 1];
     // Hoogte van het patroon zelf (zonder de beweging ervoor): daaraan meten we de afwijking.
     const endI = P.breakAt && P.breakAt < d.idx.length ? d.idx[P.breakAt] : d.candles.length - 1;
@@ -52,29 +119,30 @@ window.TD = window.TD || {};
     ];
     if (k === "neck") {
       return {
-        kind: k, candles: d.candles, height: ph, title: `Teken de neklijn · ${P.name}`,
-        prompt: `Dit is een <strong>${P.name.toLowerCase()}</strong>. Teken de <strong>neklijn</strong>.`,
+        kind: k, candles: d.candles, height: ph, title: named ? `Teken de neklijn · ${P.name}` : "Teken de neklijn",
+        prompt: named ? `Dit is een <strong>${P.name.toLowerCase()}</strong>. Teken de <strong>neklijn</strong>.` : "Herken het patroon en teken de <strong>neklijn</strong>.",
         hint: key.includes("ouble") ? "De neklijn loopt door het dal (of de top) tussen de twee toppen (of bodems)." : "De neklijn loopt door de twee dalen (of toppen) naast het hoofd.",
         truth: truth.slice(0, 1).map((t) => ({ ...t, name: "Neklijn" })),
-        explain: `${P.name}: ${P.desc}. De neklijn is het beslispunt: pas als de koers er doorheen sluit (en de retest houdt), is het patroon bevestigd.`,
+        explain: `${named ? "" : "Dit was een "}${P.name}: ${P.desc}. De neklijn is het beslispunt: pas als de koers er doorheen sluit (en de retest houdt), is het patroon bevestigd.`,
         tools: key.includes("ouble") ? ["h", "l"] : ["l", "h"],
       };
     }
     const n = truth.length;
     return {
-      kind: k, candles: d.candles, height: ph, title: `Teken de lijnen · ${P.name}`,
-      prompt: `Dit is een <strong>${P.name.toLowerCase()}</strong>. Teken de <strong>${n} lijnen</strong> van het patroon (boven- en onderkant).`,
+      kind: k, candles: d.candles, height: ph, title: named ? `Teken de lijnen · ${P.name}` : "Teken de lijnen van het patroon",
+      prompt: named ? `Dit is een <strong>${P.name.toLowerCase()}</strong>. Teken de <strong>${n} lijnen</strong> van het patroon (boven- en onderkant).` : `Herken het patroon en teken de <strong>${n} lijnen</strong> (boven- en onderkant).`,
       hint: "Een trendlijn trek je door minstens twee toppen (bovenkant) of twee bodems (onderkant). Horizontaal waar de koers steeds op dezelfde prijs keert.",
       truth: truth.map((t, i) => ({ ...t, name: n === 2 ? (i === 0 ? "Lijn 1" : "Lijn 2") : "Lijn" })),
-      explain: `${P.name}: ${P.desc}.`,
+      explain: `${named ? "" : "Dit was een "}${P.name}: ${P.desc}.`,
       tools: ["l", "h"],
     };
+    }
   }
 
   // Lange grafiek met trends en 2 of 3 ranges. Elke range = van het begin van de push tot het einde
   // van de consolidatie erna; high en low = het begin en einde van de push.
-  function findTask(rand, D) {
-    const nR = 2 + (rand() < 0.45 ? 1 : 0);
+  function findTask(rand, D, level = "beginner") {
+    const nR = level === "pro" ? 2 + Math.floor(rand() * 3) : 2 + (rand() < 0.45 ? 1 : 0);
     const start = 100;
     const path = [], boxes = [];
     let price = start, bars = 0;
@@ -85,31 +153,15 @@ window.TD = window.TD || {};
     bars += lead;
     let dir = rand() < 0.5 ? 1 : -1;
     for (let k = 0; k < nR; k++) {
-      const size = start * (0.08 + rand() * 0.07);
-      const pushBars = 6 + Math.floor(rand() * 4);
+      const size = start * (level === "beginner" ? 0.08 + rand() * 0.07 : 0.05 + rand() * 0.1);
       const from = price, to = price + dir * size;
       const lo = Math.min(from, to), hi = Math.max(from, to);
       const i1 = bars; // eerste candle van de push
-      path.push({ price: to, bars: pushBars, exact: true });
-      bars += pushBars;
+      const pp = pushPath(rand, from, to, level);
+      pp.forEach((x) => path.push(x));
+      bars += pp.reduce((a, x) => a + x.bars, 0);
       // Consolidatie binnen de range: na een push omhoog eerst terug naar de low, en andersom.
-      // Af en toe een kleine lont buiten de rand (swing failure), maar geen close erbuiten.
-      const h = hi - lo;
-      const rp = [];
-      let atTop = dir > 0;
-      const nT = 4 + Math.floor(rand() * 2);
-      for (let t = 0; t < nT; t++) {
-        const toTop = !atTop;
-        const sfp = rand() < 0.25;
-        rp.push({
-          price: toTop ? hi - h * (0.04 + rand() * 0.08) : lo + h * (0.04 + rand() * 0.08),
-          bars: 4 + Math.floor(rand() * 4),
-          wickTo: toTop ? hi + (sfp ? h * 0.04 : 0) : lo - (sfp ? h * 0.04 : 0),
-          clampHigh: hi + h * 0.05,
-          clampLow: lo - h * 0.05,
-        });
-        atTop = toTop;
-      }
+      const rp = consolidation(rand, lo, hi, dir > 0, level);
       rp.forEach((x) => path.push(x));
       const consBars = rp.reduce((a, x) => a + x.bars, 0);
       bars += consBars;
@@ -119,20 +171,28 @@ window.TD = window.TD || {};
       if (rand() < 0.3) dir = -dir;
       // De volgende push begint bij de rand van deze range.
       const edge = dir > 0 ? hi : lo;
-      path.push({ price: edge, bars: 2 });
+      path.push({ price: edge, bars: 2, exact: true });
       bars += 2;
       price = edge;
+      // Medior/Professional: soms een stuk trend met pullbacks tussen de ranges (geen range).
+      if (level !== "beginner" && rand() < 0.5) {
+        const drift = start * (0.03 + rand() * 0.04) * dir;
+        const tp = pushPath(rand, price, price + drift, level);
+        tp.forEach((x) => path.push(x));
+        bars += tp.reduce((a, x) => a + x.bars, 0);
+        price += drift;
+      }
     }
     // Afloop: trend weg van de laatste range.
     path.push({ price: price + dir * start * 0.06, bars: 6 });
-    const candles = TD.charts.candlesFromPath(rand, start, path, { vol: 0.004 });
+    const candles = TD.charts.candlesFromPath(rand, start, path, { vol: 0.004 * NOISE[level] });
     return {
       kind: "find", candles, width: 1100, boxes,
-      title: `Zoek de ${nR} ranges`,
-      prompt: `In deze grafiek zitten <strong>${nR} ranges</strong>. Teken elke range als <strong>box</strong>: klik op het <em>begin van de push</em> bij de ene rand en daarna op het <em>einde van de range</em> bij de andere rand.`,
+      title: level === "pro" ? "Zoek alle ranges" : `Zoek de ${nR} ranges`,
+      prompt: `${level === "pro" ? "In deze grafiek zitten <strong>2 tot 4 ranges</strong>. Hoeveel precies, moet je zelf zien; elke box te veel telt als fout." : `In deze grafiek zitten <strong>${nR} ranges</strong>.`} Teken elke range als <strong>box</strong>: klik op het <em>begin van de push</em> bij de ene rand en daarna op het <em>einde van de range</em> bij de andere rand.`,
       hint: "Een range begint bij een push (snelle beweging) en daarna blijft de koers tussen het begin en het einde van die push heen en weer gaan. High en low = begin en einde van de push. De range eindigt waar de volgende push eruit breekt.",
       truth: boxes.map((b, j) => ({ name: `Range ${j + 1}`, box: b })),
-      explain: "Ranges vind je door eerst de pushes te zoeken: de snelle bewegingen. Van het begin tot het einde van zo'n push loopt je range; daarna consolideert de koers erin tot de volgende push eruit breekt. Vind je eerste 3000 ranges: hoe vaker je ze tekent, hoe sneller je ze ziet.",
+      explain: `Ranges vind je door eerst de pushes te zoeken: de snelle bewegingen. Van het begin tot het einde van zo'n push loopt je range; daarna consolideert de koers erin tot de volgende push eruit breekt.${level !== "beginner" ? " Een pullback of korte pauze midden in een push is nog geen range: de push gaat daarna verder. Deviaties en lonten buiten de rand horen niet bij de high of low." : ""} Vind je eerste 3000 ranges: hoe vaker je ze tekent, hoe sneller je ze ziet.`,
       tools: ["box"],
     };
   }
@@ -195,7 +255,8 @@ window.TD = window.TD || {};
     const res = T.map((t, j) => {
       if (!best || j >= best.p.length) return { truth: t, err: null, verdict: "missing" };
       const e = best.errs[j];
-      return { truth: t, user: best.p[j], err: e, verdict: e <= TOL_GOOD ? "good" : e <= TOL_CLOSE ? "close" : "wrong" };
+      const [tg, tc] = task.tol || TOL.beginner;
+      return { truth: t, user: best.p[j], err: e, verdict: e <= tg ? "good" : e <= tc ? "close" : "wrong" };
     });
     const extra = Math.max(0, lines.length - T.length);
     const ok = res.every((r) => r.verdict === "good") && extra === 0;
@@ -254,12 +315,16 @@ window.TD = window.TD || {};
     const chart = C.candleSVG(t.candles, { height: 360, width: W });
     const ck = state.checked;
     box.innerHTML = `
+      <div class="chips levels">
+        <span class="muted small">Niveau</span>
+        ${Object.entries(LEVELS).map(([k, v]) => `<button class="chip lvl-${k} ${lvlOf() === k ? "active" : ""}" data-dl="${k}">${v}</button>`).join("")}
+      </div>
       <div class="chips">
         <button class="chip ${state.kind === "" ? "active" : ""}" data-dk="">Alles door elkaar</button>
         ${Object.entries(KINDS).map(([k, v]) => `<button class="chip ${state.kind === k ? "active" : ""}" data-dk="${k}">${v}</button>`).join("")}
       </div>
       <section class="panel quiz draw-quiz">
-        <div class="quiz-head"><span class="badge">Zelf tekenen</span><h2>${esc(t.title)}</h2><span class="muted small">Opdracht #${state.seed}</span></div>
+        <div class="quiz-head"><span class="badge">Zelf tekenen</span><span class="badge lvl-${t.level}">${LEVELS[t.level]}</span><h2>${esc(t.title)}</h2><span class="muted small">Opdracht #${state.seed}</span></div>
         <p class="quiz-prompt">${t.prompt}</p>
         <div class="draw-tools row gap">
           ${t.tools.map((tl) => `<button type="button" class="btn small ${state.tool === tl ? "active" : ""}" data-tool="${tl}">${tl === "h" ? "— Horizontale lijn" : tl === "box" ? "▭ Range-box (klik twee hoeken)" : "／ Lijn (klik begin en eind)"}</button>`).join("")}
@@ -284,7 +349,7 @@ window.TD = window.TD || {};
             <p class="muted small">${
               ck.boxes
                 ? "Groen gestippeld = de juiste ranges. Blauw = jouw boxen. Goed = high en low binnen 10% van de hoogte van de range én minstens 60% overlap in tijd; bijna = binnen 20% en 40% overlap."
-                : `Groen gestippeld = de juiste lijnen. Blauw = jouw lijnen. Goed = afwijking tot ${TOL_GOOD * 100}% van de hoogte van het patroon, bijna = tot ${TOL_CLOSE * 100}%.`
+                : `Groen gestippeld = de juiste lijnen. Blauw = jouw lijnen. Goed = afwijking tot ${(t.tol || TOL.beginner)[0] * 100}% van de hoogte van het patroon, bijna = tot ${(t.tol || TOL.beginner)[1] * 100}%.`
             }</p>
           </div>`
             : ""
@@ -344,6 +409,16 @@ window.TD = window.TD || {};
         render(box, onAnswer);
       })
     );
+    box.querySelectorAll("[data-dl]").forEach((b) =>
+      b.addEventListener("click", () => {
+        state.level = b.dataset.dl;
+        try {
+          localStorage.setItem("td.draw.level", state.level);
+        } catch {}
+        newTask();
+        render(box, onAnswer);
+      })
+    );
     box.querySelectorAll("[data-dk]").forEach((b) =>
       b.addEventListener("click", () => {
         state.kind = b.dataset.dk;
@@ -368,7 +443,7 @@ window.TD = window.TD || {};
 
   function newTask() {
     state.seed = (Math.random() * 2 ** 31) | 0;
-    state.task = makeTask(state.seed, state.kind);
+    state.task = makeTask(state.seed, state.kind, lvlOf());
     state.lines = [];
     state.pending = null;
     state.checked = null;
