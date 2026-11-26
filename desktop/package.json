@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.14.1",
+  "version": "1.14.2",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 5,
     "webMinShell": 5,
-    "releaseNotes": "Leerschool: Vorige-knop om terug te gaan naar eerdere opdrachten (telt niet opnieuw mee) en nettere knoppen onder de vraag."
+    "releaseNotes": "Leerschool: RSI-grafiek bij RSI in de range, en de opdracht Mislukte breakout klopt met je systeem (stop staat in de grafiek)."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
