@@ -207,6 +207,7 @@
       fees: Math.round(plan.fees * 100) / 100,
       lesson: tr.lesson || (note ? note + " " : ""),
     });
+    if (TD.closeSnap) TD.closeSnap.capture(tr.id); // marktbeeld na afloop vastleggen
   }
 
   // Handmatige acties

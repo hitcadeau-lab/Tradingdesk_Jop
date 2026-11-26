@@ -468,3 +468,7 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .sig-history summary::-webkit-details-marker { display: none; }
 .sig-history summary h3::before { content: "▸ "; }
 .sig-history[open] summary h3::before { content: "▾ "; }
+/* Marktbeeld na afloop */
+.timeline { list-style: none; padding: 0; margin: 6px 0 10px; display: flex; flex-wrap: wrap; gap: 6px 18px; }
+.timeline li { display: flex; align-items: center; gap: 6px; }
+.tl-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }

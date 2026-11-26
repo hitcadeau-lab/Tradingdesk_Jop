@@ -245,6 +245,8 @@
   function teardown() {
     if (snapCleanup) snapCleanup();
     snapCleanup = null;
+    if (typeof closeCleanup === "function") closeCleanup();
+    closeCleanup = null;
   }
   function mountSnapshot(el, t) {
     if (snapCleanup) snapCleanup();
@@ -887,6 +889,7 @@
           alert("De trade staat in je journal, maar de papier-order is niet geplaatst: " + err.message);
         }
       }
+      if (saved && saved.status === "closed" && TD.closeSnap && TD.closeSnap.needsCapture(saved)) TD.closeSnap.capture(saved.id);
       if (saved) location.hash = "#/trades/" + saved.id;
     });
 
@@ -905,6 +908,104 @@
           `<p class="prefill-note span4">Vooraf ingevuld op basis van de geraakte levels: ${esc(query.get("why") || "")}. Controleer uitkomst, exit en PnL, en vul ‘Plan gevolgd?’ en je les zelf in.</p>`
         );
       box.scrollIntoView({ behavior: "smooth" });
+    }
+  }
+
+  // ---------------- Marktbeeld na afloop ----------------
+  const EV_COLOR = { fill: "#2962ff", tp1: "#f5a623", tp2: "#26a69a", tp3: "#26a69a", sl: "#ef5350", be: "#8b919c", close: "#d1d4dc", liq: "#ef5350" };
+  function closeSectionHTML(t, row) {
+    const ev = TD.closeSnap ? TD.closeSnap.events(t) : [];
+    const first = ev.find((e) => e.kind === "fill"), last = ev[ev.length - 1];
+    const dur = first && last && last.time > first.time ? last.time - first.time : null;
+    const human = (sec) => (sec < 3600 ? `${Math.round(sec / 60)} min` : sec < 86400 ? `${Math.round(sec / 3600)} uur` : `${(sec / 86400).toFixed(1).replace(".", ",")} dagen`);
+    return `<section class="panel span2" id="close-view">
+      <div class="row gap between">
+        <h2>Marktbeeld na afloop <span class="muted small" id="close-sub"></span></h2>
+        <a class="btn small" href="#/markt/${encodeURIComponent(TD.markets.canonical(t.ticker))}">Actuele ${esc(shortSym(t.ticker))} in Markt →</a>
+      </div>
+      ${
+        ev.length
+          ? `<ol class="timeline">${ev
+              .map(
+                (e) => `<li><span class="tl-dot" style="background:${EV_COLOR[e.kind] || "#8b919c"}"></span><strong>${esc(e.label)}</strong>${e.price ? ` @ ${TD.util.price(e.price)}` : ""} <span class="muted small">${TD.util.stamp(e.time * 1000)}</span>${
+                  e.pnl ? ` <span class="${e.pnl > 0 ? "pos" : "neg"} small">${money(e.pnl)}</span>` : ""
+                }</li>`
+              )
+              .join("")}</ol>`
+          : ""
+      }
+      <p class="muted small">${esc(t.outcome || "")}${row ? ` · ${r(row.r)}` : ""} · ${money(+t.pnl)}${dur ? ` · ${human(dur)} in de trade` : ""}</p>
+      <div id="close-chart" class="snap-chart"></div>
+      <p class="muted small" id="close-msg"></p>
+    </section>`;
+  }
+  let closeCleanup = null;
+  function drawClose(el, t) {
+    if (closeCleanup) closeCleanup();
+    closeCleanup = null;
+    const cs = t.closeSnapshot;
+    if (!el || !cs || !window.LightweightCharts) return;
+    const LC = window.LightweightCharts;
+    const chart = LC.createChart(el, {
+      height: 400, autoSize: true,
+      layout: { background: { color: "#0f1115" }, textColor: "#8b919c" },
+      grid: { vertLines: { color: "#1f232c" }, horzLines: { color: "#1f232c" } },
+      rightPriceScale: { borderColor: "#262a33" },
+      timeScale: { borderColor: "#262a33", timeVisible: true },
+      localization: { locale: "nl-NL" },
+    });
+    const series = chart.addCandlestickSeries({ upColor: "#26a69a", downColor: "#ef5350", wickUpColor: "#26a69a", wickDownColor: "#ef5350", borderVisible: false });
+    const data = cs.candles.map(([time, open, high, low, close]) => ({ time, open, high, low, close }));
+    series.setData(data);
+    const pl = t.plan || t;
+    const line = (price, color, title, style) =>
+      price !== null && price !== undefined && price !== "" && !isNaN(+price) && series.createPriceLine({ price: +price, color, lineWidth: style ? 1 : 2, lineStyle: style ?? LC.LineStyle.Solid, axisLabelVisible: true, title });
+    if (pl.rangeHigh != null && pl.rangeLow != null) {
+      line(pl.rangeHigh, "#ef5350", "Range high", LC.LineStyle.Dotted);
+      line(pl.rangeLow, "#26a69a", "Range low", LC.LineStyle.Dotted);
+    }
+    line(t.entry, "#2962ff", "Entry");
+    line(t.stopLoss, "#ef5350", "SL");
+    line(t.tp1, "#f5a623", "TP1");
+    line(t.tp2, "#26a69a", "TP2");
+    line(t.tp3, "#26a69a", "TP3");
+    // Markeringen op de candle waarin elke gebeurtenis viel.
+    const long = t.direction !== "Short";
+    const marks = [];
+    for (const e of TD.closeSnap.events(t)) {
+      const i = TD.closeSnap.idxOf(data, e.time);
+      if (i < 0) continue;
+      marks.push({ time: data[i].time, position: e.kind === "fill" ? (long ? "belowBar" : "aboveBar") : long ? "aboveBar" : "belowBar", color: EV_COLOR[e.kind] || "#8b919c", shape: e.kind === "fill" ? (long ? "arrowUp" : "arrowDown") : e.kind === "close" ? "square" : "circle", text: e.label });
+    }
+    marks.sort((a, b) => a.time - b.time);
+    series.setMarkers(marks);
+    // Inzoomen op de trade (met wat ruimte ervoor en erna).
+    const ev = TD.closeSnap.events(t);
+    if (ev.length) {
+      const a = Math.max(0, TD.closeSnap.idxOf(data, ev[0].time) - 15), b = Math.min(data.length - 1, TD.closeSnap.idxOf(data, ev[ev.length - 1].time) + 15);
+      if (b > a) chart.timeScale().setVisibleLogicalRange({ from: a, to: b });
+      else chart.timeScale().fitContent();
+    } else chart.timeScale().fitContent();
+    closeCleanup = () => chart.remove();
+  }
+  async function mountCloseView(root, t) {
+    const box = root.querySelector("#close-view");
+    if (!box || !TD.closeSnap) return;
+    const msg = box.querySelector("#close-msg"), sub = box.querySelector("#close-sub");
+    const paint = (tr) => {
+      const cs = tr.closeSnapshot;
+      sub.textContent = cs ? `(${TD.marketData.TF[cs.tf] ? TD.marketData.TF[cs.tf].label : cs.tf}, van vlak vóór de entry tot na de exit)` : "";
+      msg.textContent = cs && cs.partial ? "Let op: de entry viel buiten de beschikbare koersdata; de grafiek begint later." : "";
+      drawClose(box.querySelector("#close-chart"), tr);
+    };
+    if (t.closeSnapshot) paint(t);
+    if (TD.closeSnap.needsCapture(t)) {
+      if (!t.closeSnapshot) msg.textContent = "Marktbeeld ophalen…";
+      const snap = await TD.closeSnap.capture(t);
+      const fresh = S.getTrade(t.id);
+      if (!document.body.contains(box)) return;
+      if (snap && fresh) paint(fresh);
+      else if (!t.closeSnapshot) msg.textContent = "Geen marktbeeld beschikbaar: de trade is te lang geleden voor de koersdata (maximaal 300 candles terug), of er is geen verbinding.";
     }
   }
 
@@ -1016,6 +1117,7 @@
             </div>
           </div>
         </section>
+        ${t.status === "closed" && t.outcome !== "Cancelled" ? closeSectionHTML(t, row) : ""}
         ${
           t.drawing || t.chartRange || t.chartTrigger
             ? `<section class="panel span2">
@@ -1047,6 +1149,7 @@
       </div>`;
 
     mountSnapshot(root.querySelector("#snap-chart"), t);
+    mountCloseView(root, t);
     if (t.broker) {
       paintPosition(root, t);
       const un = TD.paper.onChange(() => {
