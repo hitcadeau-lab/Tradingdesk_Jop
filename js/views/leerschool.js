@@ -963,7 +963,9 @@
 
   T.push(function divergence(rand) {
     const R = makeRange(rand);
-    const bear = rand() < 0.5;
+    // Soms divergentie, soms niet: dan moet je het echt uit de grafiek lezen.
+    const kind = pick(rand, ["bear", "bull", "none"]);
+    const bear = kind !== "bull"; // "none" tekenen we als twee highs
     const path = [
       { price: R.mid, bars: 4 },
       { price: R.high - R.h * 0.15, bars: 5, wickTo: R.high - R.h * 0.1 },
@@ -971,20 +973,55 @@
       { price: R.high - R.h * 0.02, bars: 5, wickTo: R.high },
       { price: R.high - R.h * 0.12, bars: 2 },
     ];
+    const e = ends(path);
     let candles = build(rand, R, path, R.low + R.h * 0.2);
     if (!bear) candles = mirror(candles, R);
+    // Toppen (of bodems) in de koers: de extreme candle in elk van de twee benen.
+    const ext = (a, b) => {
+      let k = a;
+      for (let i = a; i <= b; i++) if (bear ? candles[i].h > candles[k].h : candles[i].l < candles[k].l) k = i;
+      return k;
+    };
+    const p1 = ext(e[0] + 1, e[2]), p2 = ext(e[2] + 1, candles.length - 1);
+    // RSI volgt de koers; in het tweede been is de beweging zwakker (divergentie) of even sterk (geen).
+    const mid = (R.low + R.high) / 2;
+    const raw = candles.map((c, i) => {
+      const d = Math.tanh((2.2 * (c.c - mid)) / R.h);
+      const weaker = kind !== "none" && i > e[2] ? 0.55 : kind === "none" && i > e[2] ? 1.15 : 1;
+      return 50 + 40 * d * weaker + (rand() - 0.5) * 3;
+    });
+    // Op de toppen zelf een duidelijke waarde, zodat de lijn klopt.
+    const top1 = bear ? 74 + rand() * 4 : 26 - rand() * 4;
+    const top2 = kind === "none" ? (bear ? top1 + 6 : top1 - 6) : bear ? top1 - 14 - rand() * 6 : top1 + 14 + rand() * 6;
+    // De top (of bodem) van elk been is precies het punt waar de lijn begint en eindigt.
+    const cap = (v, t) => (bear ? Math.min(v, t - 1.5) : Math.max(v, t + 1.5));
+    for (let i = 0; i < raw.length; i++) raw[i] = cap(raw[i], i <= e[2] ? top1 : top2);
+    raw[p1] = top1;
+    raw[p2] = top2;
+    const rsi = raw.map((v) => Math.max(3, Math.min(97, v)));
+    const col = kind === "none" ? "#82a8ff" : kind === "bear" ? "#ef5350" : "#26a69a";
+    const priceSeg = { i1: p1, p1: bear ? candles[p1].h : candles[p1].l, i2: p2, p2: bear ? candles[p2].h : candles[p2].l, color: col };
+    const svg =
+      C.candleSVG(candles, { segments: [priceSeg], height: 300 }) +
+      C.rsiSVG(rsi, { height: 170, segments: [{ i1: p1, v1: rsi[p1], i2: p2, v2: rsi[p2], color: col }] });
+    const word = bear ? "highs" : "lows";
+    const why = {
+      bear: `De koers maakt een hogere high, maar de RSI een lagere high (${Math.round(rsi[p1])} → ${Math.round(rsi[p2])}). De koers stijgt, maar de koopkracht neemt af.`,
+      bull: `De koers maakt een lagere low, maar de RSI een hogere low (${Math.round(rsi[p1])} → ${Math.round(rsi[p2])}). De koers daalt, maar de verkoopdruk neemt af.`,
+      none: `De koers en de RSI maken allebei een hogere high (RSI ${Math.round(rsi[p1])} → ${Math.round(rsi[p2])}). Ze bewegen samen: geen divergentie.`,
+    }[kind];
     return {
       cat: "ta",
       title: "RSI-divergentie",
-      prompt: `De koers maakt een <strong>${bear ? "hogere high" : "lagere low"}</strong>, terwijl de RSI een <strong>${bear ? "lagere high" : "hogere low"}</strong> maakt. Hoe heet dit?`,
-      svg: C.candleSVG(candles, {}),
+      prompt: `Vergelijk de twee ${word} in de koers met die in de RSI (de lijnen in beide grafieken). Wat zie je?`,
+      svg,
       options: shuffle(rand, [
-        (bear ? ok : no)("Bearish divergence", bear ? "Goed: de koers stijgt, maar de koopkracht (RSI) neemt af. Dat is geen goed teken voor verdere stijging." : "Bearish is: koers hoger, RSI lager. Hier is het andersom."),
-        (!bear ? ok : no)("Bullish divergence", !bear ? "Goed: de koers daalt verder, maar de verkoopdruk (RSI) neemt af." : "Bullish is: koers lager, RSI hoger. Hier is het andersom."),
-        no("Geen divergentie, ze bewegen samen", "Ze bewegen juist uit elkaar. Dat is precies wat een divergentie is."),
-        no("Overbought", "Overbought gaat over het niveau van de RSI (> 70), niet over het verschil tussen prijs en RSI."),
+        (kind === "bear" ? ok : no)("Bearish divergence", kind === "bear" ? "Goed. " + why : "Bearish is: koers hogere high, RSI lagere high. " + why),
+        (kind === "bull" ? ok : no)("Bullish divergence", kind === "bull" ? "Goed. " + why : "Bullish is: koers lagere low, RSI hogere low. " + why),
+        (kind === "none" ? ok : no)("Geen divergentie, ze bewegen samen", kind === "none" ? "Goed. " + why : "Ze bewegen juist uit elkaar. " + why),
+        no("Overbought", "Overbought gaat over het niveau van de RSI (> 70), niet over het verschil tussen koers en RSI. " + why),
       ]),
-      lesson: "Divergentie = prijs en RSI lopen uit elkaar. Koers hoger + RSI lager = bearish. Koers lager + RSI hoger = bullish. Ook dit alleen gebruiken bij een interessant level in je range.",
+      lesson: "Divergentie = koers en RSI lopen uit elkaar. Koers hoger + RSI lager = bearish. Koers lager + RSI hoger = bullish. Ook dit alleen gebruiken bij een interessant level in je range.",
     };
   });
 

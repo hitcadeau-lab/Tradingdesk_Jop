@@ -189,5 +189,26 @@ window.TD = window.TD || {};
     return s;
   }
 
-  TD.charts = { rng, candlesFromPath, rangePath, candleSVG, equitySVG };
+  // RSI-paneel onder een candleSVG (zelfde breedte en candle-posities), met 70/30-lijnen.
+  // segments: [{ i1, v1, i2, v2, color }] om twee toppen of bodems te verbinden.
+  function rsiSVG(values, { segments = [], width = 720, height = 130 } = {}) {
+    const padL = 10, padR = 96, padT = 10, padB = 16;
+    const w = width - padL - padR, h = height - padT - padB;
+    const step = w / values.length;
+    const x = (i) => padL + step * i + step / 2;
+    const y = (v) => padT + ((100 - v) / 100) * h;
+    let s = `<svg class="cchart rsi-pane" viewBox="0 0 ${width} ${height}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="RSI">`;
+    s += `<rect x="0" y="0" width="${width}" height="${height}" class="cc-bg"/>`;
+    s += `<rect x="${padL}" y="${y(70)}" width="${w}" height="${y(30) - y(70)}" fill="#7e57c2" opacity="0.08"/>`;
+    for (const lv of [70, 50, 30]) {
+      s += `<line x1="${padL}" x2="${width - padR}" y1="${y(lv)}" y2="${y(lv)}" class="cc-grid" ${lv === 50 ? "" : 'stroke-dasharray="4 4"'}/>`;
+      s += `<text x="${width - padR + 8}" y="${y(lv) + 4}" class="cc-note">${lv}</text>`;
+    }
+    s += `<polyline fill="none" stroke="#b39ddb" stroke-width="2" points="${values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}"/>`;
+    for (const sg of segments) s += `<line x1="${x(sg.i1)}" y1="${y(sg.v1)}" x2="${x(sg.i2)}" y2="${y(sg.v2)}" stroke="${sg.color || "#82a8ff"}" stroke-width="2"/>`;
+    s += `<text x="${padL + 6}" y="${padT + 12}" class="cc-note">RSI (14)</text>`;
+    return s + "</svg>";
+  }
+
+  TD.charts = { rng, candlesFromPath, rangePath, candleSVG, rsiSVG, equitySVG };
 })(window.TD);
