@@ -461,3 +461,10 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .draw-bar .btn.active { background: rgba(41, 98, 255, .25); border-color: var(--accent); color: var(--text); }
 .draw-bar .sep { width: 1px; height: 22px; background: var(--border); margin: 0 4px; }
 .draw-hint { margin: 2px 0 8px; min-height: 1.2em; }
+/* Notifier: blokken */
+.sig-head { display: flex; align-items: center; gap: 8px; margin: 14px 0 6px; }
+.sig-head:first-of-type { margin-top: 4px; }
+.sig-history summary { cursor: pointer; list-style: none; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.sig-history summary::-webkit-details-marker { display: none; }
+.sig-history summary h3::before { content: "▸ "; }
+.sig-history[open] summary h3::before { content: "▾ "; }

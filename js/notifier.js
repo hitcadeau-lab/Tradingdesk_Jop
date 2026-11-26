@@ -29,7 +29,7 @@
 
   function getConfig() {
     const c = storeGet(KEY_CONF, null);
-    return { enabled: true, desktop: false, interval: 5, pairs: defaultPairs(), ...(c || {}) };
+    return { enabled: true, desktop: false, interval: 5, keepDays: 3, pairs: defaultPairs(), ...(c || {}) };
   }
   function setConfig(patch) {
     storeSet(KEY_CONF, { ...getConfig(), ...patch });
@@ -65,6 +65,48 @@
   function clearSignals() {
     saveSignals([]);
     emit();
+  }
+  function removeSignal(id) {
+    saveSignals(getSignals().filter((s) => s.id !== id));
+    emit();
+  }
+  // Alle meldingen die niet meer actief zijn (verlopen, vervallen, niet tradeable, mislukt).
+  function clearInactive() {
+    saveSignals(getSignals().filter((s) => ACTIVE.includes(s.status)));
+    emit();
+  }
+
+  // Hoe lang een setup geldig blijft, in candles van zijn timeframe.
+  const MAX_AGE_BARS = { trigger: 4, reclaim: 12, accepted: 12 };
+  function setupMoment(s) {
+    return (s.status === "trigger" ? s.retestTime || s.reclaimTime || s.breakoutTime : s.reclaimTime || s.breakoutTime || s.retestTime) || null;
+  }
+  // Actieve meldingen die te oud zijn → verlopen. Oude inactieve meldingen → weg (na keepDays dagen).
+  function tidy(list, now = Date.now()) {
+    let changed = false;
+    const tfSec = (tf) => (TD.marketData.TF[tf] || {}).seconds || 3600;
+    for (const s of list) {
+      if (!ACTIVE.includes(s.status)) continue;
+      const t = setupMoment(s);
+      const maxMs = (MAX_AGE_BARS[s.status] || 12) * tfSec(s.tf) * 1000;
+      const ref = t ? t * 1000 : s.detectedAt;
+      if (ref && now - ref > maxMs + tfSec(s.tf) * 1000) {
+        const was = s.status;
+        s.status = "expired";
+        s.aged = true; // niet terugzetten bij de volgende scan
+        s.reason = `Te oud: de ${was === "trigger" ? "trigger" : "setup"} is van ${new Date(ref).toLocaleString("nl-NL", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}. Op ${tfLabel(s.tf)} is dat te lang geleden om nog in te stappen.`;
+        s.updatedAt = now;
+        changed = true;
+      }
+    }
+    const keep = +getConfig().keepDays || 0;
+    if (keep > 0) {
+      const cutoff = now - keep * 86400000;
+      const before = list.length;
+      for (let i = list.length - 1; i >= 0; i--) if (!ACTIVE.includes(list[i].status) && (list[i].updatedAt || list[i].detectedAt) < cutoff) list.splice(i, 1);
+      if (list.length !== before) changed = true;
+    }
+    return changed;
   }
 
   const tfLabel = (tf) => (TD.marketData.TF[tf] || {}).label || tf;
@@ -161,6 +203,8 @@
       list.unshift(sig);
       return sig;
     }
+    // Op leeftijd verlopen? Dan blijft hij verlopen, ook als de engine dezelfde setup nog ziet.
+    if (existing.aged) return null;
     const upgraded = (existing.status === "reclaim" || existing.status === "accepted") && signal.status === "trigger";
     Object.assign(existing, data);
     if (upgraded) {
@@ -207,6 +251,7 @@
         }
       }
     }
+    tidy(list);
     saveSignals(list);
     lastScanAt = Date.now();
     scanning = false;
@@ -243,7 +288,14 @@
     nextScanAt = Date.now() + ms;
   }
 
+  // Opruimen (verouderde triggers, oude geschiedenis) zonder te scannen.
+  function tidyNow() {
+    const list = getSignals();
+    if (tidy(list)) saveSignals(list);
+  }
+
   function start() {
+    tidyNow();
     restart();
     if (getConfig().enabled) setTimeout(scan, 2500);
     // Als de pagina na slaap weer zichtbaar wordt: meteen bijwerken.
@@ -268,7 +320,7 @@
   }
 
   TD.notifier = {
-    getConfig, setConfig, getSignals, getSignal, unseenCount, markSeen, clearSignals,
+    getConfig, setConfig, getSignals, getSignal, unseenCount, markSeen, clearSignals, removeSignal, clearInactive, setupMoment, tidyNow, ACTIVE,
     scan, start, onChange, requestPermission, title, describe, tfLabel, isBreakout, sigId,
     status: () => ({ scanning, lastScanAt, nextScanAt }),
     results: () => results,

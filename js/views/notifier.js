@@ -8,6 +8,7 @@
   const TFS = ["15m", "1h", "4h"];
   let cleanup = null;
   let unsub = null;
+  let histOpen = false;
 
   function teardown() {
     if (cleanup) cleanup();
@@ -75,6 +76,7 @@
   function renderMain(root) {
     teardown();
     const cfg = N.getConfig();
+    N.tidyNow(); // verouderde triggers eerst naar "Verlopen"
     const signals = N.getSignals();
     const st = N.status();
     const wl = S.getWatchlist();
@@ -82,19 +84,36 @@
     const symbols = [...new Set([...wl.map((w) => w.symbol), ...cfg.pairs.map((p) => p.symbol)])];
     const perm = typeof Notification === "undefined" ? "unsupported" : Notification.permission;
 
-    const rows = signals.length
-      ? `<table class="table clickable"><thead><tr><th>Tijd</th><th>Melding</th><th>Status</th><th class="num">Entry</th><th class="num">SL</th><th class="num">TP1</th><th class="num">R:R</th></tr></thead><tbody>
-        ${signals
-          .map(
-            (s) => `<tr data-href="#/notifier/${encodeURIComponent(s.id)}" class="${!s.seen && ["reclaim", "accepted", "trigger"].includes(s.status) ? "unseen" : ""}">
-            <td>${date(s.detectedAt, true)}</td>
+    // Meldingen in drie blokken: nu speelbaar, wacht op retest, geschiedenis.
+    const ago = (ms) => {
+      const m = Math.round((Date.now() - ms) / 60000);
+      return m < 1 ? "net" : m < 60 ? `${m} min geleden` : m < 1440 ? `${Math.round(m / 60)} uur geleden` : `${Math.round(m / 1440)} dag${Math.round(m / 1440) === 1 ? "" : "en"} geleden`;
+    };
+    const sigRow = (s) => {
+      const moment = N.setupMoment(s);
+      const at = moment ? moment * 1000 : s.detectedAt;
+      return `<tr data-href="#/notifier/${encodeURIComponent(s.id)}" class="${!s.seen && N.ACTIVE.includes(s.status) ? "unseen" : ""}">
+            <td><span class="nowrap">${esc(ago(at))}</span><br><span class="muted small">${date(at, true)}</span></td>
             <td><strong>${esc(N.title(s))}</strong></td>
             <td>${statusBadge(s.status, s)}</td>
             <td class="num">${price(s.entry)}</td><td class="num">${price(s.stopLoss)}</td><td class="num">${price(s.tp1)}</td>
-            <td class="num">${s.rr1.toFixed(1)}</td></tr>`
-          )
-          .join("")}</tbody></table>`
-      : `<div class="empty">Nog geen meldingen. Zodra er bij een gevolgd pair een deviatie + reclaim of een breakout met acceptatie te zien is, verschijnt hij hier${cfg.desktop ? " en krijg je een melding op je Mac" : ""}.</div>`;
+            <td class="num">${s.rr1.toFixed(1)}</td>
+            <td class="num"><button class="icon" data-sdel="${esc(s.id)}" title="Melding verwijderen" aria-label="Melding verwijderen">×</button></td></tr>`;
+    };
+    const table = (list) => `<table class="table clickable"><thead><tr><th>Setup-moment</th><th>Melding</th><th>Status</th><th class="num">Entry</th><th class="num">SL</th><th class="num">TP1</th><th class="num">R:R</th><th></th></tr></thead><tbody>${list.map(sigRow).join("")}</tbody></table>`;
+    const playable = signals.filter((s) => s.status === "trigger");
+    const waiting = signals.filter((s) => s.status === "reclaim" || s.status === "accepted");
+    const history = signals.filter((s) => !N.ACTIVE.includes(s.status));
+    const keepTxt = +cfg.keepDays ? `Oude meldingen verdwijnen na ${cfg.keepDays} dag${+cfg.keepDays === 1 ? "" : "en"}.` : "Oude meldingen blijven bewaard.";
+    const rows = `
+        <h3 class="sig-head pos">Nu speelbaar <span class="badge pos">${playable.length}</span></h3>
+        ${playable.length ? table(playable) : `<p class="muted small">Op dit moment geen trigger. Je krijgt een melding zodra een retest houdt.</p>`}
+        <h3 class="sig-head warn-text">Wacht op retest <span class="badge warn">${waiting.length}</span></h3>
+        ${waiting.length ? table(waiting) : `<p class="muted small">Geen setups die op een retest wachten.</p>`}
+        <details class="sig-history" ${histOpen ? "open" : ""}>
+          <summary><h3 class="sig-head muted">Geschiedenis <span class="badge muted">${history.length}</span></h3> <span class="muted small">verlopen, vervallen, niet tradeable of mislukt · ${esc(keepTxt)}</span></summary>
+          ${history.length ? `<div class="row gap" style="margin:6px 0"><button class="btn small" id="n-clear-hist">Geschiedenis wissen</button></div>${table(history)}` : `<p class="muted small">Geen oude meldingen.</p>`}
+        </details>`;
 
     const pairRows = symbols
       .map((sym) => {
@@ -176,6 +195,9 @@
           <label class="inline">Scan elke
             <select id="n-interval">${[1, 5, 15, 30, 60].map((m) => `<option value="${m}" ${+cfg.interval === m ? "selected" : ""}>${m} min</option>`).join("")}</select>
           </label>
+          <label class="inline">Oude meldingen verwijderen na
+            <select id="n-keep">${[[1, "1 dag"], [3, "3 dagen"], [7, "7 dagen"], [30, "30 dagen"], [0, "nooit"]].map(([v, l]) => `<option value="${v}" ${+cfg.keepDays === v ? "selected" : ""}>${l}</option>`).join("")}</select>
+          </label>
           <label class="chk"><input type="checkbox" id="n-desktop" ${cfg.desktop ? "checked" : ""} ${perm === "unsupported" ? "disabled" : ""}> Meldingen op mijn ${S.desktop ? "Mac" : "computer"}</label>
           <p class="muted small" id="n-perm">${
             perm === "denied"
@@ -193,7 +215,8 @@
             <li>Setup: een candle sluit buiten de range (deviatie) en daarna weer binnen (reclaim). <strong>Reclaim</strong> = wacht op retest, <strong>Trigger</strong> = retest houdt.</li>
             <li>Breakout: minstens 6 candles sluiten op rij buiten de range (acceptatie). <strong>Breakout · wacht op retest</strong> = nog niet instappen, <strong>Trigger</strong> = de oude rand houdt bij de retest (level flip). SL terug binnen de oude range, TP1 = halve range-hoogte, TP2 = hele range-hoogte voorbij de rand. Sluit de koers weer in de range, dan is de breakout mislukt.</li>
             <li>Geen melding bij een te diepe deviatie (stop te ver van TP1), een R:R onder 1, of als de koers al bij TP1 is (een breakout ga je niet najagen).</li>
-            <li>Gescand wordt zolang de app open is (mag geminimaliseerd).</li>
+            <li>Een <strong>Trigger</strong> blijft 4 candles geldig (15m: 1 uur, 1H: 4 uur, 4H: 16 uur), een setup die op de retest wacht 12 candles. Daarna gaat hij naar de geschiedenis: te laat om nog in te stappen.</li>
+                        <li>Gescand wordt zolang de app open is (mag geminimaliseerd).</li>
           </ol>
           <p class="muted small">Dit is een hulpmiddel, geen advies: controleer de range, de mid en je checklist altijd zelf.</p>
         </section>
@@ -206,6 +229,17 @@
 
     // events
     root.querySelector("#n-scan").addEventListener("click", () => N.scan());
+    root.querySelectorAll("[data-sdel]").forEach((b) =>
+      b.addEventListener("click", (e) => {
+        e.stopPropagation();
+        N.removeSignal(b.dataset.sdel);
+      })
+    );
+    const hist = root.querySelector(".sig-history");
+    hist.addEventListener("toggle", () => (histOpen = hist.open));
+    const ch = root.querySelector("#n-clear-hist");
+    if (ch) ch.addEventListener("click", () => confirm("Alle oude meldingen (geschiedenis) verwijderen?") && N.clearInactive());
+    root.querySelector("#n-keep").addEventListener("change", (e) => N.setConfig({ keepDays: +e.target.value }));
     const seen = root.querySelector("#n-seen");
     if (seen) seen.addEventListener("click", () => N.markSeen());
     root.querySelectorAll("[data-pair]").forEach((cb) =>
