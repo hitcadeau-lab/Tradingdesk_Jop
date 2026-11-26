@@ -954,6 +954,16 @@
     };
   });
 
+  // RSI-lijn die met de koers meebeweegt en precies op `last` eindigt (de waarde uit de vraag).
+  function rsiSeries(rand, candles, R, last) {
+    const mid = (R.low + R.high) / 2;
+    const v = candles.map((c) => 50 + 38 * Math.tanh((2.2 * (c.c - mid)) / R.h) + (rand() - 0.5) * 4);
+    const n = v.length, k = Math.min(6, n - 1);
+    const from = v[n - 1 - k];
+    for (let j = 0; j <= k; j++) v[n - 1 - k + j] = from + ((last - from) * j) / k + (j && j < k ? (rand() - 0.5) * 3 : 0);
+    return v.map((x) => Math.max(3, Math.min(97, x)));
+  }
+
   T.push(function rsi(rand) {
     const R = makeRange(rand);
     const where = pick(rand, ["high", "mid", "low"]);
@@ -970,7 +980,7 @@
       cat: "ta",
       title: "RSI in de range",
       prompt: `De koers staat bij de <strong>${where === "high" ? "range high" : where === "low" ? "range low" : "mid"}</strong> en de RSI staat op <strong>${val}</strong>. Wat zegt dit?`,
-      svg: C.candleSVG(candles, { lines: rangeLines(R) }),
+      svg: C.candleSVG(candles, { lines: rangeLines(R), height: 300 }) + C.rsiSVG(rsiSeries(rand, candles, R, val), { height: 150, mark: val }),
       options: shuffle(rand, [
         correct,
         no(`Direct ${val > 50 ? "shorten" : "longen"}: de RSI zegt ${val > 50 ? "overbought" : "oversold"}`, "De RSI is lagging en mag nooit alleen gebruikt worden. Combineer hem altijd met je range en triggers."),

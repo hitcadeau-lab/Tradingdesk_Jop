@@ -191,7 +191,7 @@ window.TD = window.TD || {};
 
   // RSI-paneel onder een candleSVG (zelfde breedte en candle-posities), met 70/30-lijnen.
   // segments: [{ i1, v1, i2, v2, color }] om twee toppen of bodems te verbinden.
-  function rsiSVG(values, { segments = [], width = 720, height = 130 } = {}) {
+  function rsiSVG(values, { segments = [], width = 720, height = 130, mark } = {}) {
     const padL = 10, padR = 96, padT = 10, padB = 16;
     const w = width - padL - padR, h = height - padT - padB;
     const step = w / values.length;
@@ -202,11 +202,18 @@ window.TD = window.TD || {};
     s += `<rect x="${padL}" y="${y(70)}" width="${w}" height="${y(30) - y(70)}" fill="#7e57c2" opacity="0.08"/>`;
     for (const lv of [70, 50, 30]) {
       s += `<line x1="${padL}" x2="${width - padR}" y1="${y(lv)}" y2="${y(lv)}" class="cc-grid" ${lv === 50 ? "" : 'stroke-dasharray="4 4"'}/>`;
-      s += `<text x="${width - padR + 8}" y="${y(lv) + 4}" class="cc-note">${lv}</text>`;
+      s += `<text x="${width - padR - 4}" y="${y(lv) - 3}" text-anchor="end" class="cc-note">${lv}</text>`;
     }
     s += `<polyline fill="none" stroke="#b39ddb" stroke-width="2" points="${values.map((v, i) => `${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ")}"/>`;
     for (const sg of segments) s += `<line x1="${x(sg.i1)}" y1="${y(sg.v1)}" x2="${x(sg.i2)}" y2="${y(sg.v2)}" stroke="${sg.color || "#82a8ff"}" stroke-width="2"/>`;
     s += `<text x="${padL + 6}" y="${padT + 12}" class="cc-note">RSI (14)</text>`;
+    if (mark !== undefined && values.length) {
+      // Laatste waarde als label rechts, zoals op TradingView.
+      const ly = y(values[values.length - 1]);
+      s += `<circle cx="${x(values.length - 1)}" cy="${ly}" r="3.5" fill="#b39ddb"/>`;
+      s += `<rect x="${width - padR + 6}" y="${ly - 10}" width="${padR - 10}" height="20" rx="4" fill="#7e57c2"/>`;
+      s += `<text x="${width - padR + 6 + (padR - 10) / 2}" y="${ly + 4}" text-anchor="middle" class="cc-label">RSI ${Math.round(mark)}</text>`;
+    }
     return s + "</svg>";
   }
 
