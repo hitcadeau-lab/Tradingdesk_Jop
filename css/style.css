@@ -474,3 +474,21 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .tl-dot { width: 9px; height: 9px; border-radius: 50%; display: inline-block; }
 .quiz-chart svg { display: block; width: 100%; height: auto; }
 .quiz-chart .rsi-pane { border-top: 1px solid var(--border); }
+/* Leerschool: niveaus */
+.chips.levels { align-items: center; margin-bottom: 6px; }
+.badge.lvl-beginner, .chip.lvl-beginner.active { background: rgba(38, 166, 154, .18); color: var(--pos); border-color: rgba(38, 166, 154, .5); }
+.badge.lvl-medior, .chip.lvl-medior.active { background: rgba(245, 166, 35, .16); color: var(--warn); border-color: rgba(245, 166, 35, .5); }
+.badge.lvl-pro, .chip.lvl-pro.active { background: rgba(126, 87, 194, .22); color: #b39ddb; border-color: rgba(126, 87, 194, .6); }
+/* Rekenmachine */
+.calc-panel { position: fixed; right: 20px; bottom: 20px; z-index: 900; width: 300px; padding: 12px; background: var(--panel-2); border: 1px solid var(--border); border-radius: 10px; box-shadow: 0 10px 30px rgba(0, 0, 0, .5); }
+.calc-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.calc-in { width: 100%; font-size: 16px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.calc-out { min-height: 1.4em; margin: 6px 2px; color: var(--muted); font-family: ui-monospace, SFMono-Regular, Menlo, monospace; text-align: right; }
+.calc-out.err { color: var(--neg); }
+.calc-keys { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.calc-keys button { padding: 9px 0; border-radius: 6px; border: 1px solid var(--border); background: var(--panel); color: var(--text); font-size: 15px; cursor: pointer; }
+.calc-keys button:hover { background: rgba(41, 98, 255, .15); }
+.calc-keys .op { color: var(--accent); }
+.calc-keys .fn { color: var(--warn); }
+.calc-keys .eq { grid-column: span 4; background: var(--accent); border-color: var(--accent); color: #fff; }
+.calc-hist { margin: 8px 0 4px; padding-left: 18px; color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer; }

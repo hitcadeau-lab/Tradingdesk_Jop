@@ -9,6 +9,20 @@
 
   const COL = { rh: "#ef5350", rl: "#26a69a", mid: "#f5a623", neutral: "#8b919c", entry: "#2962ff", sl: "#ef5350", tp: "#26a69a" };
 
+  // Niveau per opdracht (beginner / medior / professional).
+  const LEVELS = { beginner: "Beginner", medior: "Medior", pro: "Professional" };
+  const LEVEL_OF = {
+    rangeLevels: "beginner", midCheck: "beginner", candleAnatomy: "beginner", structure: "beginner", srFlip: "beginner",
+    trendLine: "beginner", rsi: "beginner", rr: "beginner", takeProfit: "beginner", devVsSfp: "beginner", mindset: "beginner",
+    breakoutRisk: "beginner",
+    rangeDrawing: "medior", distribution: "medior", reclaimRetest: "medior", midRange: "medior", stopLoss: "medior",
+    setupType: "medior", pattern: "medior", positionSize: "medior", breakout: "medior", breakoutAcceptance: "medior",
+    breakoutEntry: "medior", divergence: "medior",
+    rangeInRange: "pro", sfpQuality: "pro", rangeTradeable: "pro", breakoutStop: "pro", breakoutTarget: "pro",
+    breakoutFailed: "pro", outcomePnl: "pro", liquidation: "pro", breakevenWinrate: "pro", expectancy: "pro", sizeWithFees: "pro",
+  };
+  const levelOf = (f) => LEVEL_OF[f.name] || "medior";
+
   const CATS = {
     range: "Ranges tekenen",
     trigger: "Deviaties & swing failures",
@@ -1198,6 +1212,125 @@
       ],
     },
   ];
+  // ===== Professional: rekenen met leverage, winrate en expectancy (gebruik de rekenmachine) =====
+  // Zorg dat de antwoorden na afronden echt verschillen.
+  function distinct(vals, f) {
+    const seen = new Set();
+    return vals.every((v) => {
+      const k = f(v);
+      if (seen.has(k)) return false;
+      seen.add(k);
+      return true;
+    });
+  }
+  const pctTxt = (v, d = 1) => (v * 100).toLocaleString("nl-NL", { maximumFractionDigits: d, minimumFractionDigits: d }) + "%";
+  const rTxt = (v) => (v >= 0 ? "+" : "") + v.toLocaleString("nl-NL", { maximumFractionDigits: 2, minimumFractionDigits: 2 }) + "R";
+
+  T.push(function liquidation(rand) {
+    for (;;) {
+      const entry = pick(rand, [64000, 3200, 145, 2.4, 330, 158]) * (0.9 + rand() * 0.2);
+      const lev = pick(rand, [3, 5, 10]);
+      const mm = 0.05;
+      const long = rand() < 0.5;
+      const sgn = long ? -1 : 1;
+      const good = entry * (1 + sgn * (1 / lev - mm));
+      const a = entry * (1 + sgn * (1 / lev)); // marge vergeten
+      const b = entry * (1 + sgn * mm); // alleen onderhoudsmarge
+      const c = entry * (1 + sgn * (1 / lev + mm)); // verkeerd om opgeteld
+      if (!distinct([good, a, b, c], fmt)) continue;
+      return {
+        cat: "risk",
+        title: "Liquidatieprijs",
+        prompt: `Je gaat <strong>${long ? "long" : "short"}</strong> op <strong>${fmt(entry)}</strong> met <strong>${lev}x</strong> leverage. De onderhoudsmarge is <strong>5%</strong>. Rond welke prijs word je (ongeveer) geliquideerd?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(fmt(good), `Liquidatie ≈ entry × (1 ${long ? "−" : "+"} (1/leverage − onderhoudsmarge)) = ${fmt(entry)} × (1 ${long ? "−" : "+"} (${fmt(1 / lev)} − 0,05)) = ${fmt(good)}. Je marge is 1/${lev} van de positie; als het verlies je marge min de onderhoudsmarge opeet, sluit de exchange je positie.`),
+          no(fmt(a), "Dit is entry ± 1/leverage: je vergeet de onderhoudsmarge. De exchange liquideert al eerder, zodra er nog 5% marge over is."),
+          no(fmt(b), "Dit is alleen de onderhoudsmarge van 5%. De leverage bepaalt hoeveel marge je hebt: die telt hier niet mee."),
+          no(fmt(c), "Hier zijn de onderhoudsmarge en 1/leverage opgeteld in plaats van afgetrokken. Liquidatie komt juist eerder, niet later."),
+        ]),
+        lesson: "Liquidatie ≈ entry × (1 ∓ (1/leverage − onderhoudsmarge)). Je stop moet altijd ruim vóór je liquidatieprijs liggen; anders kies je minder leverage.",
+      };
+    }
+  });
+
+  T.push(function breakevenWinrate(rand) {
+    for (;;) {
+      const R = pick(rand, [0.8, 1, 1.2, 1.5, 1.8, 2, 2.4, 2.5, 3, 4]);
+      const good = 1 / (1 + R);
+      const opts = [good, R / (1 + R), 0.5, Math.min(0.95, 1 / R)];
+      if (!distinct(opts, (v) => pctTxt(v))) continue;
+      return {
+        cat: "risk",
+        title: "Benodigde winrate",
+        prompt: `Je winnende trades leveren gemiddeld <strong>${R.toLocaleString("nl-NL")}R</strong> op, je verliezers kosten <strong>1R</strong>. Welke winrate heb je minimaal nodig om <strong>break-even</strong> te draaien (fees niet meegerekend)?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(pctTxt(good), `Break-even winrate = 1 / (1 + R) = 1 / (1 + ${R.toLocaleString("nl-NL")}) = ${pctTxt(good)}. Dan is winrate × ${R.toLocaleString("nl-NL")}R precies gelijk aan (1 − winrate) × 1R.`),
+          no(pctTxt(opts[1]), `Dit is R / (1 + R): het deel dat je verliest, niet de winrate die je nodig hebt. Reken na: ${pctTxt(opts[1])} × ${R.toLocaleString("nl-NL")}R is meer dan nodig.`),
+          no(pctTxt(0.5), "50% is alleen nodig als je winst en verlies even groot zijn (1R tegen 1R)."),
+          no(pctTxt(opts[3]), "Dit is 1 / R. De juiste formule is 1 / (1 + R): je moet het verlies van 1R meetellen."),
+        ]),
+        lesson: "Break-even winrate = 1 / (1 + gemiddelde R). Hoe groter je R:R, hoe lager de winrate die je nodig hebt. Daarom loont TP2.",
+      };
+    }
+  });
+
+  T.push(function expectancy(rand) {
+    for (;;) {
+      const wr = pick(rand, [0.35, 0.4, 0.45, 0.5, 0.55, 0.6]);
+      const win = pick(rand, [1.2, 1.5, 1.8, 2, 2.4, 3]);
+      const good = wr * win - (1 - wr);
+      const opts = [good, wr * win, wr * win - wr, (1 - wr) * win - wr];
+      if (!distinct(opts, rTxt)) continue;
+      return {
+        cat: "risk",
+        title: "Expectancy",
+        prompt: `Je winrate is <strong>${pctTxt(wr, 0)}</strong>. Een winnende trade levert gemiddeld <strong>${win.toLocaleString("nl-NL")}R</strong> op, een verliezer kost <strong>1R</strong>. Wat is je verwachte resultaat (expectancy) per trade?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(rTxt(good), `Expectancy = winrate × winst − verliesrate × verlies = ${pctTxt(wr, 0)} × ${win.toLocaleString("nl-NL")}R − ${pctTxt(1 - wr, 0)} × 1R = ${rTxt(good)} per trade. ${good > 0 ? "Positief: op de lange termijn verdien je met deze aanpak." : "Negatief: op de lange termijn verlies je, hoe goed individuele trades ook voelen."}`),
+          no(rTxt(opts[1]), "Dit is alleen de winstkant (winrate × winst). Je vergeet de verliezers af te trekken."),
+          no(rTxt(opts[2]), "Hier is de winrate van de winst afgetrokken in plaats van de verliesrate (1 − winrate)."),
+          no(rTxt(opts[3]), "Winrate en verliesrate zijn omgedraaid."),
+        ]),
+        lesson: "Expectancy = winrate × gem. winst − (1 − winrate) × gem. verlies. Positief = een strategie met edge. Je journal rekent dit voor je uit in het Portfolio.",
+      };
+    }
+  });
+
+  T.push(function sizeWithFees(rand) {
+    for (;;) {
+      const bal = pick(rand, [1000, 2500, 5000, 10000]);
+      const riskPct = pick(rand, [0.5, 1, 2]);
+      const entry = pick(rand, [64000, 3200, 145, 330]) * (0.95 + rand() * 0.1);
+      const dist = entry * (0.006 + rand() * 0.02);
+      const long = rand() < 0.5;
+      const sl = long ? entry - dist : entry + dist;
+      const fee = 0.0005;
+      const risk = (bal * riskPct) / 100;
+      const good = risk / (dist + (entry + sl) * fee);
+      const noFee = risk / dist;
+      const wrong1 = risk / (dist + entry * fee);
+      const wrong2 = (risk * (1 - 2 * fee)) / entry;
+      const u = (v) => (+v).toLocaleString("nl-NL", { maximumSignificantDigits: 4 });
+      if (!distinct([good, noFee, wrong1, wrong2], u)) continue;
+      return {
+        cat: "risk",
+        title: "Positiegrootte met fees",
+        prompt: `Saldo <strong>${money(bal)}</strong>, risico <strong>${riskPct}%</strong>. ${long ? "Long" : "Short"} op <strong>${fmt(entry)}</strong>, stop op <strong>${fmt(sl)}</strong>. De fee is <strong>0,05%</strong> bij instappen én bij uitstappen. Hoeveel units neem je, zodat je verlies <em>inclusief fees</em> precies je risico is?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(u(good), `Risico = ${money(risk)}. Verlies per unit = afstand tot stop (${fmt(dist)}) + fee bij instappen (${fmt(entry)} × 0,05%) + fee bij uitstappen (${fmt(sl)} × 0,05%) = ${fmt(dist + (entry + sl) * fee)}. Units = ${money(risk)} / ${fmt(dist + (entry + sl) * fee)} = ${u(good)}.`),
+          no(u(noFee), `Dit is zonder fees (${money(risk)} / ${fmt(dist)}). Bij je stop verlies je dan meer dan ${riskPct}%, omdat de fees er nog bij komen.`),
+          no(u(wrong1), "Hier is alleen de fee bij instappen meegeteld. Bij een stop betaal je ook een fee bij het uitstappen."),
+          no(u(wrong2), "Dit deelt je risico door de prijs: zo bepaal je je inzet, niet je risico tot de stop."),
+        ]),
+        lesson: "Units = risico / (afstand tot stop + fee in + fee uit). Zo is je verlies bij de stop inclusief kosten precies 1R. De papier-modus en Advise rekenen zo.",
+      };
+    }
+  });
+
   T.push(function mindset(rand) {
     const s = pick(rand, SCEN);
     return {
@@ -1211,18 +1344,47 @@
   });
 
   // ---------- UI ----------
-  let state = { cat: "", seed: null, q: null, answered: false };
+  let state = { cat: "", level: "", seed: null, q: null, fn: null, answered: false };
+  try {
+    state.level = localStorage.getItem("td.school.level") || "";
+  } catch {}
   const catCache = new Map();
   function catOf(f) {
     if (!catCache.has(f)) catCache.set(f, f(C.rng(1)).cat);
     return catCache.get(f);
   }
 
+  // Minder herhaling: opdrachten die je recent had, komen pas terug als je minstens de helft
+  // van de andere opdrachten in deze selectie hebt gezien (ook na het herstarten van de app).
+  function recent() {
+    try {
+      return JSON.parse(localStorage.getItem("td.school.recent") || "[]");
+    } catch {
+      return [];
+    }
+  }
+  function remember(name) {
+    const r = recent().filter((x) => x !== name);
+    r.unshift(name);
+    try {
+      localStorage.setItem("td.school.recent", JSON.stringify(r.slice(0, 40)));
+    } catch {}
+  }
+  function poolNow() {
+    const pool = T.filter((f) => (!state.cat || catOf(f) === state.cat) && (!state.level || levelOf(f) === state.level));
+    return pool.length ? pool : T.filter((f) => !state.cat || catOf(f) === state.cat);
+  }
   function newQuestion() {
-    const pool = T.filter((f) => !state.cat || catOf(f) === state.cat);
+    const pool = poolNow();
+    const block = new Set(recent().slice(0, Math.max(1, Math.floor(pool.length / 2))));
+    let choices = pool.filter((f) => !block.has(f.name));
+    if (!choices.length) choices = pool.filter((f) => f !== state.fn);
+    if (!choices.length) choices = pool;
     state.seed = (Math.random() * 2 ** 31) | 0;
     const rand = C.rng(state.seed);
-    state.q = pick(rand, pool.length ? pool : T)(rand);
+    state.fn = pick(rand, choices);
+    remember(state.fn.name);
+    state.q = state.fn(rand);
     state.answered = false;
   }
 
@@ -1235,7 +1397,7 @@
   }
 
   function render(root) {
-    if (!state.q) newQuestion();
+    if (!state.q || !state.fn) newQuestion();
     const s = S.getSchool();
     const q = state.q;
     const catStat = (k) => {
@@ -1251,6 +1413,13 @@
           <button class="btn small" id="reset">Reset score</button>
         </div>
       </div>
+      <div class="chips levels">
+        <span class="muted small">Niveau</span>
+        <button class="chip ${state.level === "" ? "active" : ""}" data-level="">Alle niveaus</button>
+        ${Object.entries(LEVELS)
+          .map(([k, v]) => `<button class="chip lvl-${k} ${state.level === k ? "active" : ""}" data-level="${k}">${v} <em>${T.filter((f) => levelOf(f) === k).length}</em></button>`)
+          .join("")}
+      </div>
       <div class="chips">
         <button class="chip ${state.cat === "" ? "active" : ""}" data-cat="">Alles door elkaar</button>
         ${Object.entries(CATS)
@@ -1261,6 +1430,7 @@
       <section class="panel quiz">
         <div class="quiz-head">
           <span class="badge">${esc(CATS[q.cat])}</span>
+          <span class="badge lvl-${levelOf(state.fn)}">${esc(LEVELS[levelOf(state.fn)])}</span>
           <h2>${esc(q.title)}</h2>
           <span class="muted small">Opdracht #${state.seed}</span>
         </div>
@@ -1278,6 +1448,7 @@
         </div>
         <div class="lesson-box" id="lesson" hidden><strong>Les:</strong> ${esc(q.lesson)}</div>
         <div class="quiz-actions">
+          <button class="btn" id="calc" title="Rekenmachine openen">🧮 Rekenmachine</button>
           <button class="btn primary" id="next">Overslaan →</button>
         </div>
       </section>
@@ -1324,6 +1495,17 @@
       render(root);
       window.scrollTo({ top: 0, behavior: "smooth" });
     });
+    root.querySelector("#calc").addEventListener("click", () => TD.calculator && TD.calculator.toggle());
+    root.querySelectorAll("[data-level]").forEach((c) =>
+      c.addEventListener("click", () => {
+        state.level = c.dataset.level;
+        try {
+          localStorage.setItem("td.school.level", state.level);
+        } catch {}
+        newQuestion();
+        render(root);
+      })
+    );
     root.querySelectorAll("[data-cat]").forEach((c) =>
       c.addEventListener("click", () => {
         state.cat = c.dataset.cat;
@@ -1340,5 +1522,5 @@
   }
 
   TD.views = TD.views || {};
-  TD.views.leerschool = { render, _templates: T, CATS };
+  TD.views.leerschool = { render, _templates: T, CATS, LEVELS, levelOf };
 })(window.TD);
