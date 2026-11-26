@@ -497,3 +497,4 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .calc-keys .eq { grid-column: span 4; background: var(--accent); border-color: var(--accent); color: #fff; }
 .calc-hist { margin: 8px 0 4px; padding-left: 18px; color: var(--muted); font-size: 12px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; cursor: pointer; }
 @media (max-width: 600px) { .quiz-actions #replay-note { flex-basis: 100%; } .quiz-actions #next { margin-left: auto !important; } }
+.theory-grid .span-all { grid-column: 1 / -1; }

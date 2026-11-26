@@ -16,7 +16,7 @@
     trendLine: "beginner", rsi: "beginner", rr: "beginner", takeProfit: "beginner", devVsSfp: "beginner", mindset: "beginner",
     breakoutRisk: "beginner",
     rangeDrawing: "medior", distribution: "medior", reclaimRetest: "medior", midRange: "medior", stopLoss: "medior",
-    setupType: "medior", pattern: "medior", positionSize: "medior", breakout: "medior", breakoutAcceptance: "medior",
+    setupType: "medior", pattern: "medior", patternName: "beginner", patternExpect: "beginner", patternTrade: "pro", positionSize: "medior", breakout: "medior", breakoutAcceptance: "medior",
     breakoutEntry: "medior", divergence: "medior",
     rangeInRange: "pro", sfpQuality: "pro", rangeTradeable: "pro", breakoutStop: "pro", breakoutTarget: "pro",
     breakoutFailed: "pro", outcomePnl: "pro", liquidation: "pro", breakevenWinrate: "pro", expectancy: "pro", sizeWithFees: "pro",
@@ -923,34 +923,228 @@
     };
   });
 
-  T.push(function pattern(rand) {
-    const R = makeRange(rand);
-    const top = rand() < 0.5;
-    const atEdge = rand() < 0.7;
-    const lvl = atEdge ? R.high : R.mid + R.h * 0.08;
-    const path = [
-      ...rangePath(rand, R, 4),
-      { price: lvl - R.h * 0.03, bars: 4, wickTo: lvl, clampHigh: lvl },
-      { price: lvl - R.h * 0.3, bars: 4, clampHigh: lvl },
-      { price: lvl - R.h * 0.03, bars: 4, wickTo: lvl, clampHigh: lvl },
-      { price: lvl - R.h * 0.4, bars: 4, clampHigh: lvl, clampLow: R.low },
-    ];
-    let candles = build(rand, R, path);
-    if (!top) candles = mirror(candles, R);
-    const name = top ? "Double top" : "Double bottom";
-    const rightSide = top ? "range high" : "range low";
+  // ===== Chart patterns (uit de Chart Patterns-sheet), altijd in de context van je range =====
+  // Elk patroon als reeks draaipunten (0 = laag, 1 = hoog). Lijnen: horizontaal (neklijn,
+  // rechthoek) of door twee draaipunten (wedges, pennants, driehoeken).
+  // fam: reversal / continuation / bilateral. bias: bearish / bullish / null.
+  const PATTERNS = (() => {
+    const base = {
+      doubleTop: { name: "Double top", fam: "reversal", bias: "bearish", piv: [0, 0.82, 0.5, 0.82, 0.38, 0.5, 0.12], breakAt: 4,
+        lines: [{ h: 0.5, label: "Neklijn" }], desc: "twee gelijke toppen met een dal ertussen; breekt de koers onder de neklijn (het dal), dan is het patroon bevestigd" },
+      headShoulders: { name: "Head & shoulders", fam: "reversal", bias: "bearish", piv: [0, 0.66, 0.45, 0.92, 0.45, 0.66, 0.34, 0.45, 0.08], breakAt: 6,
+        lines: [{ a: 2, b: 4, label: "Neklijn" }], desc: "linkerschouder, hoger hoofd, rechterschouder op dezelfde hoogte als links; de neklijn loopt door de twee dalen" },
+      risingWedge: { name: "Rising wedge", fam: "reversal", bias: "bearish", piv: [0, 0.55, 0.34, 0.66, 0.5, 0.74, 0.62, 0.79, 0.69, 0.52, 0.6, 0.15], breakAt: 9,
+        lines: [{ a: 1, b: 7 }, { a: 2, b: 8 }], desc: "hogere highs en hogere lows die naar elkaar toe lopen (twee stijgende, samenkomende lijnen); de koopkracht neemt af" },
+      fallingWedgeCont: { name: "Falling wedge (continuation)", fam: "continuation", bias: "bullish", piv: [0.25, 0.78, 0.54, 0.7, 0.5, 0.63, 0.48, 0.66, 0.6, 1], breakAt: 7,
+        lines: [{ a: 1, b: 5 }, { a: 2, b: 6 }], desc: "na een stijging een kleine dalende, samenkomende correctie; daarna gaat de stijging vaak verder" },
+      bullRect: { name: "Bullish rectangle", fam: "continuation", bias: "bullish", piv: [0.2, 0.7, 0.48, 0.7, 0.48, 0.7, 0.48, 0.8, 0.7, 1], breakAt: 7,
+        lines: [{ h: 0.7 }, { h: 0.48 }], desc: "na een stijging een kleine horizontale range (pauze); uitbraak naar boven = voortzetting" },
+      bullPennant: { name: "Bullish pennant", fam: "continuation", bias: "bullish", piv: [0.2, 0.78, 0.5, 0.72, 0.56, 0.67, 0.6, 0.76, 0.68, 1], breakAt: 7,
+        lines: [{ a: 1, b: 5 }, { a: 2, b: 6 }], desc: "na een sterke stijging (de vlaggenstok) een klein, symmetrisch samenkomend driehoekje; daarna vaak verder omhoog" },
+      ascTriangle: { name: "Ascending triangle", fam: "bilateral", bias: null, piv: [0, 0.72, 0.38, 0.72, 0.52, 0.72, 0.62, 0.72, 0.67], breakAt: null,
+        lines: [{ h: 0.72 }, { a: 2, b: 6 }], desc: "vlakke bovenkant en stijgende bodems; de koers wordt naar de top gedrukt, maar kan twee kanten op breken" },
+      symTriangle: { name: "Symmetrical triangle", fam: "bilateral", bias: null, piv: [0.1, 0.95, 0.15, 0.85, 0.28, 0.75, 0.4, 0.66, 0.5], breakAt: null,
+        lines: [{ a: 1, b: 7 }, { a: 2, b: 6 }], desc: "lagere highs en hogere lows die samenkomen; geen richting tot de uitbraak" },
+    };
+    const mirrorP = (p, name, extra) => ({
+      ...p, ...extra, name,
+      bias: p.bias === "bearish" ? "bullish" : p.bias === "bullish" ? "bearish" : null,
+      piv: p.piv.map((y) => 1 - y),
+      lines: p.lines.map((l) => (l.h !== undefined ? { ...l, h: 1 - l.h } : l)),
+    });
+    return {
+      ...base,
+      doubleBottom: mirrorP(base.doubleTop, "Double bottom", { desc: "twee gelijke bodems met een top ertussen; breekt de koers boven de neklijn, dan is het patroon bevestigd" }),
+      invHeadShoulders: mirrorP(base.headShoulders, "Inverse head & shoulders", { desc: "linkerschouder, lager hoofd, rechterschouder; de neklijn loopt door de twee toppen" }),
+      fallingWedge: mirrorP(base.risingWedge, "Falling wedge", { desc: "lagere highs en lagere lows die naar elkaar toe lopen (twee dalende, samenkomende lijnen); de verkoopdruk neemt af" }),
+      risingWedgeCont: mirrorP(base.fallingWedgeCont, "Rising wedge (continuation)", { desc: "na een daling een kleine stijgende, samenkomende correctie; daarna gaat de daling vaak verder" }),
+      bearRect: mirrorP(base.bullRect, "Bearish rectangle", { desc: "na een daling een kleine horizontale range (pauze); uitbraak naar beneden = voortzetting" }),
+      bearPennant: mirrorP(base.bullPennant, "Bearish pennant", { desc: "na een sterke daling een klein samenkomend driehoekje; daarna vaak verder omlaag" }),
+      descTriangle: mirrorP(base.ascTriangle, "Descending triangle", { desc: "vlakke onderkant en dalende toppen; de koers wordt naar de bodem gedrukt, maar kan twee kanten op breken" }),
+    };
+  })();
+  const PKEYS = Object.keys(PATTERNS);
+  const famTxt = { reversal: "reversal (omkeerpatroon)", continuation: "continuation (voortzettingspatroon)", bilateral: "bilateraal (kan twee kanten op)" };
+
+  // Teken een patroon in het prijsgebied [lo, hi]. upto: tot welk draaipunt (voor "wat verwacht je?").
+  function drawPattern(rand, key, lo, hi, opts = {}) {
+    const P = PATTERNS[key];
+    const piv = P.piv.slice(0, opts.upto ?? P.piv.length);
+    const Y = (y) => lo + y * (hi - lo);
+    const barsPer = opts.bars || 3;
+    const path = piv.slice(1).map((y, k) => ({ price: Y(y), bars: k === 0 ? 5 : barsPer, exact: true, wickTo: Y(y) }));
+    const start = Y(piv[0]);
+    const candles = C.candlesFromPath(rand, start, [...(opts.before || []), ...path], { vol: ((hi - lo) / start) * 0.018 });
+    const off = (opts.before || []).reduce((a, x) => a + x.bars, 0);
+    const idx = [off - 1 < 0 ? 0 : off - 1, ...ends(path).map((i) => i + off)];
+    // Lijnen lopen tot de uitbraak (of tot het eind als het patroon nog niet uitgebroken is).
+    const end = P.breakAt && P.breakAt < idx.length ? idx[P.breakAt] : candles.length - 1;
+    const lines = [], segments = [];
+    for (const l of P.lines) {
+      if (l.h !== undefined) lines.push({ price: Y(l.h), label: l.label || "", color: "#82a8ff" });
+      else if (l.a < piv.length && l.b < piv.length) {
+        const i1 = idx[l.a], i2 = idx[l.b], p1 = Y(piv[l.a]), p2 = Y(piv[l.b]);
+        const pe = p1 + ((p2 - p1) * (end - i1)) / (i2 - i1 || 1);
+        segments.push({ i1, p1, i2: end, p2: pe, color: "#82a8ff" });
+      }
+    }
+    return { candles, lines, segments, idx, Y, P };
+  }
+  // Drie verwarrende alternatieven: liefst uit dezelfde familie of de gespiegelde versie.
+  function confusers(rand, key) {
+    const P = PATTERNS[key];
+    const same = PKEYS.filter((k) => k !== key && PATTERNS[k].fam === P.fam);
+    const other = PKEYS.filter((k) => k !== key && PATTERNS[k].fam !== P.fam);
+    return shuffle(rand, [...shuffle(rand, same).slice(0, 2), ...shuffle(rand, other).slice(0, 3)]).slice(0, 3);
+  }
+
+  // Beginner: welk patroon is dit?
+  T.push(function patternName(rand) {
+    const key = pick(rand, PKEYS);
+    const { candles, lines, segments, P } = drawPattern(rand, key, 100, 140);
     return {
       cat: "ta",
-      title: "Chart pattern",
-      prompt: `Welk patroon zie je rechts, en wat doe je ermee?`,
-      svg: C.candleSVG(candles, { lines: rangeLines(R) }),
+      title: "Welk patroon?",
+      prompt: "Welk chart pattern zie je? De blauwe lijnen helpen je.",
+      svg: C.candleSVG(candles, { lines, segments, height: 300 }),
       options: shuffle(rand, [
-        (atEdge ? ok : no)(`${name} bij de ${rightSide}: bruikbaar als extra bevestiging samen met je triggers`, atEdge ? `Goed. Een ${name.toLowerCase()} is een reversal-patroon. Het is pas bruikbaar omdat het aan de juiste kant van de range staat (bij de ${rightSide}), en dan nog alleen samen met andere triggers.` : `Het patroon staat níét bij de ${rightSide} maar rond de mid. Daar gebruik je het niet.`),
-        (!atEdge ? ok : no)(`${name}, maar rond de mid: niet bruikbaar`, !atEdge ? `Goed. Patronen gebruik je alleen aan de juiste kant van je range. Rond de mid heb je geen edge, ook niet met een patroon.` : `Dit patroon staat wél bij de ${rightSide}.`),
-        no(`${top ? "Double bottom" : "Double top"}`, `Andersom: twee gelijke ${top ? "highs" : "lows"} = ${name.toLowerCase()}.`),
-        no(`${name}: altijd direct ${top ? "shorten" : "longen"}`, "Patronen zijn kansen (bijv. 60%), geen garantie en geen leading indicator. Gebruik ze nooit los van je range en triggers."),
+        ok(P.name, `Goed. ${P.name}: ${P.desc}. Het is een ${famTxt[P.fam]}.`),
+        ...confusers(rand, key).map((k) => no(PATTERNS[k].name, `Nee. ${PATTERNS[k].name}: ${PATTERNS[k].desc}. Wat je hier ziet is een ${P.name.toLowerCase()}: ${P.desc}.`)),
       ]),
-      lesson: "Chart patterns (double top/bottom, head & shoulders, wedges) zijn waarschijnlijkheden. Gebruik ze alleen aan de juiste kant van je range, samen met andere triggers.",
+      lesson: "Reversal: double top/bottom, (inverse) head & shoulders, wedges tegen de trend in. Continuation: rectangles, pennants, wedges in de trend. Bilateraal: driehoeken, die twee kanten op kunnen breken.",
+    };
+  });
+
+  // Beginner: wat verwacht je meestal? (het patroon stopt vóór de uitbraak)
+  T.push(function patternExpect(rand) {
+    const key = pick(rand, PKEYS);
+    const P = PATTERNS[key];
+    const upto = P.breakAt ? P.breakAt : P.piv.length;
+    const { candles, lines, segments } = drawPattern(rand, key, 100, 140, { upto });
+    const answers = {
+      bearRev: "Een omkering naar beneden (bearish)",
+      bullRev: "Een omkering naar boven (bullish)",
+      cont: "Voortzetting van de beweging ervoor",
+      wait: "Geen voorkeur: wacht op de uitbraak",
+    };
+    const good = P.fam === "bilateral" ? "wait" : P.fam === "continuation" ? "cont" : P.bias === "bearish" ? "bearRev" : "bullRev";
+    const why = {
+      bearRev: `${P.name} is een ${famTxt[P.fam]}: ${P.desc}.`,
+      bullRev: `${P.name} is een ${famTxt[P.fam]}: ${P.desc}.`,
+      cont: `${P.name} is een ${famTxt[P.fam]}: ${P.desc}.`,
+      wait: `${P.name} is ${famTxt[P.fam]}: ${P.desc}.`,
+    }[good];
+    return {
+      cat: "ta",
+      title: "Wat verwacht je?",
+      prompt: `Dit is een <strong>${P.name.toLowerCase()}</strong>, net vóór de uitbraak. Wat verwacht je hier meestal?`,
+      svg: C.candleSVG(candles, { lines, segments, height: 300 }),
+      options: shuffle(rand, Object.entries(answers).map(([k, t]) => (k === good ? ok(t, `Goed. ${why} Het blijft een kans, geen zekerheid: wacht op de bevestiging (uitbraak + retest).`) : no(t, `Nee. ${why}`)))),
+      lesson: "Patronen geven een verwachting, geen zekerheid. Een reversal draait de beweging om, een continuation zet hem voort, een driehoek kan twee kanten op. Pas de uitbraak (met acceptatie) bevestigt het patroon.",
+    };
+  });
+
+  // Medior: het patroon in je range. Alleen aan de juiste kant van de range telt het.
+  T.push(function pattern(rand) {
+    const R = makeRange(rand);
+    const bear = rand() < 0.5;
+    const key = bear ? pick(rand, ["doubleTop", "headShoulders", "risingWedge"]) : pick(rand, ["doubleBottom", "invHeadShoulders", "fallingWedge"]);
+    const where = pick(rand, ["edge", "edge", "mid", "wrong"]);
+    const P = PATTERNS[key];
+    // Prijsgebied van het patroon: bij de goede rand, rond de mid, of aan de verkeerde kant.
+    const band = 0.42 * R.h;
+    const top = where === "edge" ? (bear ? R.high : R.low + band) : where === "mid" ? R.mid + band / 2 : bear ? R.low + band : R.high;
+    const lo = top - band, hi = top;
+    const upto = P.breakAt ? P.breakAt + 1 : P.piv.length;
+    const before = rangePath(rand, R, 4);
+    const { candles, lines, segments } = drawPattern(rand, key, lo, hi, { upto, before });
+    const edge = bear ? "range high" : "range low";
+    const dir = bear ? "short" : "long";
+    const good = {
+      edge: ok(`Bruikbaar: extra bevestiging voor een ${dir}, samen met je trigger`, `Goed. Een ${P.name.toLowerCase()} bij de ${edge} staat aan de juiste kant van je range. Vaak is het in je eigen taal een deviatie of swing failure bij de ${edge}; de breuk van de neklijn of lijn + retest is je trigger.`),
+      mid: ok("Niet bruikbaar: rond de mid heb je geen edge", `Goed. Het patroon staat rond de mid. Daar heb je geen edge, ook niet met een patroon: wacht tot de koers bij een rand van je range is.`),
+      wrong: ok("Oppassen: het patroon staat aan de verkeerde kant van je range", `Goed. Een ${bear ? "bearish" : "bullish"} patroon bij de ${bear ? "range low" : "range high"} gaat in tegen je range-plan (daar zoek je juist een ${bear ? "long" : "short"}). Speel het niet; wacht op een setup bij de goede rand.`),
+    }[where];
+    const others = [
+      where !== "edge" && no(`Bruikbaar: extra bevestiging voor een ${dir}, samen met je trigger`, `Het patroon staat niet bij de ${edge}, dus niet aan de juiste kant van je range.`),
+      where !== "mid" && no("Niet bruikbaar: rond de mid heb je geen edge", `Het patroon staat niet rond de mid maar ${where === "edge" ? `bij de ${edge}` : `aan de verkeerde kant van de range`}.`),
+      where !== "wrong" && no("Oppassen: het patroon staat aan de verkeerde kant van je range", `Nee, het staat ${where === "edge" ? "juist aan de goede kant" : "rond de mid"}.`),
+      no(`Direct ${dir}: het patroon is een garantie`, "Patronen zijn waarschijnlijkheden, geen garantie. Gebruik ze nooit los van je range en je trigger."),
+    ].filter(Boolean);
+    return {
+      cat: "ta",
+      title: "Patroon in je range",
+      prompt: `Je ziet een <strong>${P.name.toLowerCase()}</strong> rechts in de grafiek. Wat doe je ermee binnen je range-plan?`,
+      svg: C.candleSVG(candles, { lines: [...rangeLines(R), ...lines], segments, height: 320 }),
+      options: shuffle(rand, [good, ...others]),
+      lesson: "Patronen zijn waarschijnlijkheden. Gebruik ze alleen aan de juiste kant van je range (bearish bij de range high, bullish bij de range low), als extra bevestiging naast je trigger.",
+    };
+  });
+
+  // Professional: instappen, stop en mislukking bij een reversal-patroon.
+  T.push(function patternTrade(rand) {
+    const bear = rand() < 0.5;
+    const key = bear ? pick(rand, ["doubleTop", "headShoulders"]) : pick(rand, ["doubleBottom", "invHeadShoulders"]);
+    const P = PATTERNS[key];
+    const variant = pick(rand, ["entry", "stop", "failed"]);
+    const base = 100, span = 40;
+    let d;
+    if (variant === "failed") {
+      // Breuk door de neklijn, daarna terug erboven (of eronder) en verder: patroon mislukt.
+      const piv = P.piv.slice(0, P.breakAt + 1).concat(bear ? [0.62, 0.9] : [0.38, 0.1]);
+      const saved = P.piv;
+      P.piv = piv;
+      d = drawPattern(rand, key, base, base + span);
+      P.piv = saved;
+    } else d = drawPattern(rand, key, base, base + span, { upto: P.breakAt + 2 });
+    const { candles, lines, segments, idx, Y } = d;
+    const n = candles.length;
+    const neck = key.includes("ouble") ? Y(P.lines[0].h) : Y(P.piv[P.lines[0].a]);
+    const extreme = bear ? Math.max(...P.piv.slice(0, P.breakAt)) : Math.min(...P.piv.slice(0, P.breakAt));
+    const shoulder = key.toLowerCase().includes("head") ? Y(P.piv[5]) : Y(extreme);
+    const dir = bear ? "short" : "long";
+    if (variant === "entry") {
+      const letters = shuffle(rand, ["A", "B", "C"]);
+      const pts = [
+        { p: neck, l: letters[0], good: true, why: `Op de retest van de neklijn na de breuk. Net als bij je range-setups: breuk (deviatie/reclaim), retest, en dan pas instappen. De oude ${bear ? "support" : "resistance"} wordt ${bear ? "resistance" : "support"}.` },
+        { p: shoulder, l: letters[1], good: false, why: `Bij de ${key.toLowerCase().includes("head") ? "rechterschouder" : bear ? "tweede top" : "tweede bodem"} instappen is anticiperen: het patroon is dan nog niet bevestigd. Zonder breuk van de neklijn is het gewoon nog een range.` },
+        { p: Y(bear ? 0.2 : 0.8), l: letters[2], good: false, why: "Ver na de breuk instappen is najagen: je stop moet dan ver weg en je R:R is slecht." },
+      ];
+      return {
+        cat: "setup", title: "Instappen op een patroon",
+        prompt: `Een <strong>${P.name.toLowerCase()}</strong> is door de neklijn gebroken. Waar stap je <strong>${dir}</strong> in?`,
+        svg: C.candleSVG(candles, { lines, segments, markers: pts.map((x) => ({ i: n - 1, price: x.p, label: x.l })), height: 300 }),
+        options: shuffle(rand, pts).map((x) => (x.good ? ok : no)("Punt " + x.l, x.why)),
+        lesson: "Bij een patroon stap je in op de retest van de neklijn na de breuk, niet ervoor (anticiperen) en niet ver erna (najagen). Hetzelfde ritme als je deviatie, reclaim en retest.",
+      };
+    }
+    if (variant === "stop") {
+      const letters = shuffle(rand, ["A", "B", "C"]);
+      const sAt = bear ? shoulder + span * 0.03 : shoulder - span * 0.03;
+      const pts = [
+        { p: sAt, l: letters[0], good: true, why: `Net voorbij de ${key.toLowerCase().includes("head") ? "rechterschouder" : bear ? "tweede top" : "tweede bodem"}. Komt de koers daar, dan is het patroon ongeldig.` },
+        { p: bear ? neck + span * 0.02 : neck - span * 0.02, l: letters[1], good: false, why: "Vlak bij de neklijn staat je stop binnen het bereik van de retest: een gewone lont stopt je uit." },
+        { p: Y(bear ? 1.05 : -0.05), l: letters[2], good: false, why: `${bear ? "Ver boven het hoogste" : "Ver onder het laagste"} punt van het hele patroon is te ver: je R:R wordt slecht. Het patroon is al ongeldig ${key.toLowerCase().includes("head") ? "voorbij de rechterschouder" : bear ? "boven de tweede top" : "onder de tweede bodem"}.` },
+      ];
+      return {
+        cat: "setup", title: "Stop bij een patroon",
+        prompt: `Je gaat <strong>${dir}</strong> op de retest van de neklijn van een <strong>${P.name.toLowerCase()}</strong>. Waar zet je je stop?`,
+        svg: C.candleSVG(candles, { lines, segments, markers: pts.map((x) => ({ i: n - 1, price: x.p, label: x.l })), height: 300 }),
+        options: shuffle(rand, pts).map((x) => (x.good ? ok : no)("Punt " + x.l, x.why)),
+        lesson: "Stop bij een patroon: net voorbij het laatste draaipunt dat het patroon geldig houdt (tweede top/bodem of rechterschouder). Check daarna je R:R tot je targets in de range.",
+      };
+    }
+    return {
+      cat: "setup", title: "Mislukt patroon",
+      prompt: `De koers brak door de neklijn van een <strong>${P.name.toLowerCase()}</strong>, maar kwam terug en sluit nu weer ${bear ? "boven" : "onder"} de neklijn. Wat zegt dit?`,
+      svg: C.candleSVG(candles, { lines, segments, height: 300 }),
+      options: shuffle(rand, [
+        ok("Het patroon is mislukt: geen trade meer in die richting, en vaak beweegt de koers juist de andere kant op", `Goed. Terug ${bear ? "boven" : "onder"} de neklijn is een mislukte breuk, net als een deviatie. Mislukte patronen geven vaak een sterke beweging de andere kant op: wie op het patroon zat, moet eruit.`),
+        no(`Bijkopen in je ${dir}: het patroon komt nog`, "Bijkopen in een trade waarvan het idee ongeldig is, vergroot alleen je verlies."),
+        no("Niets: een patroon blijft geldig tot het hoofd of de top weer geraakt wordt", "De neklijn is het beslispunt. Sluit de koers er weer voorbij, dan is de breuk mislukt."),
+        no("Een tweede patroon tekenen zodat het weer klopt", "Achteraf je analyse aanpassen aan de koers is precies wat je niet wilt. Accepteer dat het patroon mislukt is."),
+      ]),
+      lesson: "Een patroon is pas bevestigd na de breuk van de neklijn met acceptatie en een retest. Sluit de koers terug, dan is het mislukt: net als een mislukte breakout geeft dat vaak een beweging de andere kant op.",
     };
   });
 
@@ -1509,6 +1703,11 @@
           <div><h3>Candles & timeframes</h3><p>Elke candle = één timeframe. Body = open tot close, wicks = waar de koers kwam maar niet sloot. Tip: wit en zwart in plaats van groen en rood.</p></div>
           <div><h3>Trend & structuur</h3><p>HH + HL = uptrend, equal highs/lows = sideways (range), LH + LL = downtrend. Trendlijn officieel vanaf 3 touches. Uptrend van onderaf tekenen, downtrend van bovenaf.</p></div>
           <div><h3>Patronen</h3><p>Double top/bottom, head & shoulders, wedges, continuation-patronen: waarschijnlijkheden. Alleen gebruiken aan de juiste kant van je range.</p></div>
+          <div class="span-all"><h3>Chart patterns in je range</h3>
+            <p><b>Reversal</b> (omkering): double top · head & shoulders · rising wedge (bearish, bij de <b>range high</b>), double bottom · inverse head & shoulders · falling wedge (bullish, bij de <b>range low</b>). Vaak is zo'n patroon in jouw taal een deviatie of swing failure bij de rand; de breuk van de neklijn + retest is je trigger, stop net voorbij de tweede top/bodem of rechterschouder.</p>
+            <p><b>Continuation</b> (voortzetting): bullish/bearish rectangle, pennant en wedge ná een sterke beweging. Een rectangle is een kleine range; de uitbraak met acceptatie + retest is je breakout-setup.</p>
+            <p><b>Bilateraal</b>: ascending, descending en symmetrical triangle. Kan twee kanten op: niet vooraf traden, wacht op de uitbraak met acceptatie en een retest.</p>
+            <p class="muted">Patronen zijn waarschijnlijkheden, geen garantie. Niet rond de mid, niet als enige reden, en je targets blijven de mid en de andere rand van je range.</p></div>
           <div><h3>RSI</h3><p>&gt; 70 overbought, &lt; 30 oversold, plus divergenties. Lagging: alleen bij een interessant level in je range en samen met triggers.</p></div>
         </div>
         <p class="muted small">Nog niet in deze transcripts: trendlijnen als trigger binnen de range en ‘red zones’. Die modules kunnen er later bij.</p>
