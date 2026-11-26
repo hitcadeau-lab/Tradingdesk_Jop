@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.12.0",
+  "version": "1.13.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 5,
     "webMinShell": 5,
-    "releaseNotes": "Notifier: blokken Nu speelbaar, Wacht op retest en Geschiedenis. Triggers verouderen op tijd (4 candles), meldingen verwijderen en automatisch opruimen na een instelbaar aantal dagen."
+    "releaseNotes": "Marktbeeld na afloop: bij gesloten trades de grafiek van entry tot exit, met waar je entry gevuld werd en welke TP's, stop of break-even geraakt zijn, plus een tijdlijn."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
