@@ -535,3 +535,4 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .bt-trades summary { cursor: pointer; list-style: none; }
 .bt-trades summary::-webkit-details-marker { display: none; }
 .bt-chart { min-height: 340px; }
+.bt-money input[type=number] { width: 110px; }

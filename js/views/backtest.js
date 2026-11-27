@@ -25,6 +25,27 @@
       /* te groot of geen opslag: alleen in deze sessie */
     }
   };
+  // Rekenen in geld: startbedrag en risico per trade (van het saldo op dat moment, dus met rente-op-rente).
+  const MKEY = "td.backtest.money";
+  function moneyCfg() {
+    let m = null;
+    try {
+      m = JSON.parse(localStorage.getItem(MKEY) || "null");
+    } catch {}
+    return { start: 1000, risk: +S.getSettings().defaultRisk || 1, ...(m || {}) };
+  }
+  function balance(list, mc) {
+    let bal = mc.start, peak = mc.start, dd = 0;
+    const points = [];
+    for (const x of list.filter((y) => y.R !== null).sort((a, b) => (a.exitTime || a.time) - (b.exitTime || b.time))) {
+      bal *= 1 + (mc.risk / 100) * x.R;
+      peak = Math.max(peak, bal);
+      dd = Math.min(dd, bal / peak - 1);
+      points.push({ t: x.exitTime || x.time, v: bal });
+    }
+    return { end: bal, change: bal / mc.start - 1, dd, points };
+  }
+  const M = (v) => TD.util.money(v);
   const R = (v) => (v === null || v === undefined || isNaN(v) ? "—" : `${v >= 0 ? "+" : ""}${v.toFixed(2)}R`);
   const P = (v) => `${Math.round(v * 100)}%`;
   const PF = (v) => (v === Infinity ? "∞" : v.toFixed(2));
@@ -36,22 +57,22 @@
   }
 
   // ---------- grafieken ----------
-  function equitySVG(series) {
-    const W = 900, H = 260, pl = 50, pr = 120, pt = 14, pb = 26;
+  function equitySVG(series, fmt = R, zeroLine = 0) {
+    const W = 900, H = 260, pl = 50, pr = 210, pt = 14, pb = 26;
     const all = series.flatMap((s) => s.points);
     if (!all.length) return "";
     const t0 = Math.min(...all.map((p) => p.t)), t1 = Math.max(...all.map((p) => p.t));
-    const v0 = Math.min(0, ...all.map((p) => p.v)), v1 = Math.max(0, ...all.map((p) => p.v));
+    const v0 = Math.min(zeroLine, ...all.map((p) => p.v)), v1 = Math.max(zeroLine, ...all.map((p) => p.v));
     const x = (t) => pl + ((t - t0) / (t1 - t0 || 1)) * (W - pl - pr);
     const y = (v) => pt + ((v1 - v) / (v1 - v0 || 1)) * (H - pt - pb);
     let s = `<svg class="bt-eq" viewBox="0 0 ${W} ${H}" xmlns="http://www.w3.org/2000/svg" role="img" aria-label="Equity curve in R">`;
-    for (const g of [v0, (v0 + v1) / 2, v1, 0]) s += `<line x1="${pl}" x2="${W - pr}" y1="${y(g)}" y2="${y(g)}" class="cc-grid" ${g === 0 ? 'stroke-width="1.5"' : ""}/><text x="${pl - 6}" y="${y(g) + 4}" text-anchor="end" class="cc-note">${g.toFixed(0)}R</text>`;
+    for (const g of [v0, (v0 + v1) / 2, v1, zeroLine]) s += `<line x1="${pl}" x2="${W - pr}" y1="${y(g)}" y2="${y(g)}" class="cc-grid" ${g === zeroLine ? 'stroke-width="1.5"' : ""}/><text x="${pl - 6}" y="${y(g) + 4}" text-anchor="end" class="cc-note">${fmt === R ? g.toFixed(0) + "R" : Math.round(g)}</text>`;
     series.forEach((se, k) => {
       if (!se.points.length) return;
-      const pts = [{ t: t0, v: 0 }, ...se.points];
+      const pts = [{ t: t0, v: zeroLine }, ...se.points];
       s += `<polyline fill="none" stroke="${se.color}" stroke-width="${k === 0 ? 1.5 : 2.2}" ${k === 0 ? 'stroke-dasharray="4 3"' : ""} points="${pts.map((p) => `${x(p.t).toFixed(1)},${y(p.v).toFixed(1)}`).join(" ")}"/>`;
       const last = pts[pts.length - 1];
-      s += `<text x="${W - pr + 6}" y="${y(last.v) + 4}" class="cc-note" fill="${se.color}">${esc(se.name)} ${R(last.v)}</text>`;
+      s += `<text x="${W - pr + 6}" y="${y(last.v) + 4}" class="cc-note" fill="${se.color}">${esc(se.name)} ${fmt(last.v)}</text>`;
     });
     s += `<text x="${pl}" y="${H - 6}" class="cc-note">${date(t0 * 1000)}</text><text x="${W - pr}" y="${H - 6}" text-anchor="end" class="cc-note">${date(t1 * 1000)}</text>`;
     return s + "</svg>";
@@ -65,13 +86,18 @@
   };
 
   // ---------- tabellen ----------
-  const row = (name, st, extra = "") => `<tr>
+  let MC = moneyCfg();
+  const row = (name, list, extra = "") => {
+    const st = B.stats(list), bal = balance(list, MC);
+    return `<tr>
       <td>${name}${extra}</td><td class="num">${st.n}</td><td class="num">${st.n ? P(st.winrate) : "—"}</td>
       <td class="num muted small">${st.tp2} / ${st.tp1} / ${st.sl}</td>
       <td class="num ${cls(st.expectancy)}"><strong>${st.n ? R(st.expectancy) : "—"}</strong></td>
       <td class="num ${cls(st.totalR)}">${st.n ? R(st.totalR) : "—"}</td><td class="num">${st.n ? PF(st.pf) : "—"}</td>
-      <td class="num neg">${st.n ? R(st.maxDD) : "—"}</td></tr>`;
-  const head = (first) => `<thead><tr><th>${first}</th><th class="num">Trades</th><th class="num" title="TP1 gehaald vóór de stop">Winrate</th><th class="num" title="TP1+TP2 / TP1+BE / Stop">TP2 / BE / SL</th><th class="num" title="Gemiddeld resultaat per trade, na fees">Gem. R</th><th class="num">Totaal</th><th class="num">PF</th><th class="num" title="Grootste daling van de equity">Max DD</th></tr></thead>`;
+      <td class="num neg">${st.n ? R(st.maxDD) : "—"}</td>
+      <td class="num ${cls(bal.change)}" title="${M(MC.start)} bij ${MC.risk}% risico per trade">${st.n ? `<strong>${M(bal.end)}</strong> <span class="muted small">${bal.change >= 0 ? "+" : ""}${Math.round(bal.change * 100)}%</span>` : "—"}</td></tr>`;
+  };
+  const head = (first) => `<thead><tr><th>${first}</th><th class="num">Trades</th><th class="num" title="TP1 gehaald vóór de stop">Winrate</th><th class="num" title="TP1+TP2 / TP1+BE / Stop">TP2 / BE / SL</th><th class="num" title="Gemiddeld resultaat per trade, na fees">Gem. R</th><th class="num">Totaal</th><th class="num">PF</th><th class="num" title="Grootste daling van de equity">Max DD</th><th class="num" title="Eindsaldo vanaf je startbedrag, met je risico per trade">Eindsaldo</th></tr></thead>`;
 
   function resultsHTML(res) {
     const T = res.trades;
@@ -82,7 +108,36 @@
     const cell = (st) => (st.n ? `<span class="${cls(st.expectancy)}">${R(st.expectancy)}</span> <span class="muted small">· ${P(st.winrate)} · ${st.n}×</span>` : '<span class="muted">—</span>');
     const verdictBadge = { play: "pos", doubt: "warn", skip: "neg" };
     const outTxt = { tp2: "TP1 + TP2", tp1: "TP1 + BE", sl: "Stop", open: "Nog open" };
+    const balAll = balance(T, MC), balPD = balance(T.filter((x) => x.verdict !== "skip"), MC), balP = balance(T.filter((x) => x.verdict === "play"), MC);
+    const hold = res.moves ? Object.values(res.moves).reduce((a, b) => (Math.abs(b) > Math.abs(a) ? b : a), 0) : null;
+    const tile = (lbl, b, sub) => `<div class="kpi"><span>${lbl}</span><strong class="${cls(b.change)}">${M(b.end)}</strong><em>${b.change >= 0 ? "+" : ""}${Math.round(b.change * 100)}% · ${sub}</em></div>`;
     return `
+      <section class="panel bt-money">
+        <div class="row gap between">
+          <h2>Wat was je bedrag geworden?</h2>
+          <div class="row gap">
+            <label class="inline">Startbedrag <input type="number" id="bt-start" min="1" step="100" value="${MC.start}"></label>
+            <label class="inline">Risico per trade <input type="number" id="bt-risk" min="0.1" max="10" step="0.1" value="${MC.risk}"> %</label>
+          </div>
+        </div>
+        <div class="kpis small">
+          ${tile("Alle trades", balAll, `max daling ${Math.round(balAll.dd * 100)}%`)}
+          ${tile("Speelbaar + Twijfel", balPD, `max daling ${Math.round(balPD.dd * 100)}%`)}
+          ${tile("Alleen Speelbaar", balP, `max daling ${Math.round(balP.dd * 100)}%`)}
+          ${hold !== null ? `<div class="kpi"><span>Kopen en vasthouden</span><strong class="${cls(hold)}">${M(MC.start * (1 + hold))}</strong><em>${hold >= 0 ? "+" : ""}${Math.round(hold * 100)}% · ${esc(shortSym(res.ticker))} zelf</em></div>` : ""}
+        </div>
+        ${equitySVG(
+          [
+            { name: "Alles", color: "#8b919c", points: balAll.points },
+            { name: "Speelbaar + Twijfel", color: "#f5a623", points: balPD.points },
+            { name: "Speelbaar", color: "#26a69a", points: balP.points },
+          ],
+          M,
+          MC.start
+        )}
+        <p class="muted small">Elke trade riskeert ${MC.risk}% van je saldo op dat moment (rente-op-rente): bij de stop verlies je ${MC.risk}%, bij +2R win je ${2 * MC.risk}%. Na fees. Kopen en vasthouden = ${esc(shortSym(res.ticker))} op het begin kopen en aan het eind verkopen.</p>
+      </section>
+
       <section class="panel bt-verdict ${c.verdict.key}">
         <h2>${esc(c.verdict.title)}</h2>
         <p>${esc(c.verdict.text)}</p>
@@ -108,8 +163,8 @@
       <section class="panel">
         <h2>Per aantal signalen <span class="muted small">— zoals de beoordeling in Advise</span></h2>
         <table class="table">${head("Signalen")}<tbody>
-          ${groups.map(([g, l]) => row(`<span class="badge ${dot[g]}">${g}</span>`, B.stats(l))).join("")}
-          <tr class="bt-total">${row("<strong>Alle trades</strong>", c.all).slice(4)}
+          ${groups.map(([g, l]) => row(`<span class="badge ${dot[g]}">${g}</span>`, l)).join("")}
+          <tr class="bt-total">${row("<strong>Alle trades</strong>", T).slice(4)}
         </tbody></table>
         <p class="muted small">Winrate = TP1 gehaald vóór de stop. Gem. R = gemiddeld resultaat per trade na fees (50% op TP1, rest op break-even of TP2). Een setup met een rode check is volgens de regels “Niet spelen”.</p>
       </section>
@@ -117,10 +172,10 @@
       <section class="panel">
         <h2>Per oordeel, setup en timeframe</h2>
         <table class="table">${head("Groep")}<tbody>
-          ${[["play", "Speelbaar"], ["doubt", "Twijfel"], ["skip", "Niet spelen"]].map(([k, l]) => row(`<span class="badge ${verdictBadge[k]}">${l}</span>`, B.stats(T.filter((x) => x.verdict === k)))).join("")}
-          ${["Reclaim", "Breakout"].filter((s) => res.setups.includes(s)).map((s) => row(s, B.stats(T.filter((x) => x.setup === s)))).join("")}
-          ${res.tfs.map((tf) => row(tf === "1h" ? "1H" : tf === "4h" ? "4H" : tf, B.stats(T.filter((x) => x.tf === tf)))).join("")}
-          ${["Long", "Short"].map((d) => row(d, B.stats(T.filter((x) => x.direction === d)))).join("")}
+          ${[["play", "Speelbaar"], ["doubt", "Twijfel"], ["skip", "Niet spelen"]].map(([k, l]) => row(`<span class="badge ${verdictBadge[k]}">${l}</span>`, T.filter((x) => x.verdict === k))).join("")}
+          ${["Reclaim", "Breakout"].filter((s) => res.setups.includes(s)).map((s) => row(s, T.filter((x) => x.setup === s))).join("")}
+          ${res.tfs.map((tf) => row(tf === "1h" ? "1H" : tf === "4h" ? "4H" : tf, T.filter((x) => x.tf === tf))).join("")}
+          ${["Long", "Short"].map((d) => row(d, T.filter((x) => x.direction === d))).join("")}
         </tbody></table>
       </section>
 
@@ -192,6 +247,28 @@
     } catch (e) {
       box.innerHTML = `<p class="neg pad">${esc(e.message)}</p>`;
     }
+  }
+
+  // Klikbare trades en de geld-instellingen (direct opnieuw rekenen, zonder opnieuw te testen).
+  function bindResults(root, res) {
+    root.querySelectorAll(".bt-row").forEach((tr) => tr.addEventListener("click", () => showTrade(tr, res.trades[+tr.dataset.k], res.ticker)));
+    const upd = () => {
+      const start = Math.max(1, +root.querySelector("#bt-start").value || 1000);
+      const risk = Math.min(10, Math.max(0.1, +root.querySelector("#bt-risk").value || 1));
+      MC = { start, risk };
+      try {
+        localStorage.setItem(MKEY, JSON.stringify(MC));
+      } catch {}
+      const open = root.querySelector(".bt-trades") && root.querySelector(".bt-trades").open;
+      teardown();
+      root.querySelector("#bt-results").innerHTML = resultsHTML(res);
+      if (open) root.querySelector(".bt-trades").open = true;
+      bindResults(root, res);
+    };
+    ["#bt-start", "#bt-risk"].forEach((sel) => {
+      const el = root.querySelector(sel);
+      if (el) el.addEventListener("change", upd);
+    });
   }
 
   // ---------- pagina ----------
@@ -276,8 +353,7 @@
       }
     });
 
-    const res = last;
-    root.querySelectorAll(".bt-row").forEach((tr) => tr.addEventListener("click", () => res && showTrade(tr, res.trades[+tr.dataset.k], res.ticker)));
+    if (last && last.trades) bindResults(root, last);
   }
 
   TD.views = TD.views || {};
