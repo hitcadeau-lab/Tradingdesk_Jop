@@ -15,6 +15,7 @@
     const V = TD.views;
     if (section !== "notifier" && V.notifier) V.notifier.teardown();
     if (section !== "advise" && V.advise) V.advise.teardown();
+    if (V.backtest) V.backtest.teardown();
     if (V.trades) V.trades.teardown();
     if (section !== "meldingen" && V.meldingen) V.meldingen.teardown();
     document.querySelectorAll("[data-nav]").forEach((l) => l.classList.toggle("active", l.dataset.nav === (section || "markt")));
@@ -33,6 +34,8 @@
         return V.notifier.render(root, { id: a }, query);
       case "advise":
         return V.advise.render(root, { id: a }, query);
+      case "backtest":
+        return V.backtest.render(root, {}, query);
       case "meldingen":
         return V.meldingen.render(root, {}, query);
       case "instellingen":

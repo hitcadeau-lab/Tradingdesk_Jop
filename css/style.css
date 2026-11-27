@@ -518,3 +518,20 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .review-lesson.info { border-left-color: var(--accent); }
 .review-lesson.warn { border-left-color: var(--warn); }
 .review-lesson.neg { border-left-color: var(--neg); }
+/* Backtest */
+.bt-settings .inline-chk { display: inline-flex; margin-right: 12px; }
+.bt-progress { height: 6px; background: var(--panel-2); border-radius: 3px; margin-top: 10px; overflow: hidden; }
+.bt-bar { height: 100%; width: 0; background: var(--accent); transition: width .2s; }
+.bt-verdict { border-left: 4px solid var(--border); }
+.bt-verdict.yes { border-left-color: var(--pos); }
+.bt-verdict.meh, .bt-verdict.few { border-left-color: var(--warn); }
+.bt-verdict.no { border-left-color: var(--neg); }
+.bt-tips { padding-left: 18px; margin: 6px 0; }
+.bt-tips li { margin: 4px 0; }
+.bt-tips li.pos::marker { color: var(--pos); }
+.bt-tips li.warn::marker { color: var(--warn); }
+.bt-total td { border-top: 1px solid var(--border); }
+.bt-eq { width: 100%; height: auto; display: block; }
+.bt-trades summary { cursor: pointer; list-style: none; }
+.bt-trades summary::-webkit-details-marker { display: none; }
+.bt-chart { min-height: 340px; }
