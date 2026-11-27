@@ -20,6 +20,9 @@
     breakoutEntry: "medior", divergence: "medior",
     rangeInRange: "pro", sfpQuality: "pro", rangeTradeable: "pro", breakoutStop: "pro", breakoutTarget: "pro",
     breakoutFailed: "pro", outcomePnl: "pro", liquidation: "pro", breakevenWinrate: "pro", expectancy: "pro", sizeWithFees: "pro",
+    levBasics: "beginner", levMargin: "beginner", levRiskSame: "beginner", levFeeDollar: "beginner",
+    levMinNeeded: "medior", levSameMargin: "medior", levMarginLoss: "medior", levRoe: "medior", levDanger: "medior", levFeeR: "medior", levFunding: "medior", levScenario: "medior",
+    levMaxSafe: "pro", levLiqStop: "pro",
   };
   const levelOf = (f) => LEVEL_OF[f.name] || "medior";
 
@@ -30,6 +33,7 @@
     setup: "Setup types",
     ta: "Technische analyse basis",
     risk: "Risk & R:R",
+    leverage: "Leverage & margin",
     mindset: "Checklist & mindset",
   };
 
@@ -1439,13 +1443,16 @@
     });
   }
   const pctTxt = (v, d = 1) => (v * 100).toLocaleString("nl-NL", { maximumFractionDigits: d, minimumFractionDigits: d }) + "%";
+  const levTxt = (v) => v.toLocaleString("nl-NL", { maximumFractionDigits: 1 }) + "x";
+  const pctS = (v) => (v * 100).toLocaleString("nl-NL", { maximumFractionDigits: 3 }) + "%";
+  const pct1 = (v) => (v * 100).toLocaleString("nl-NL", { maximumFractionDigits: 1 }) + "%";
   const rTxt = (v) => (v >= 0 ? "+" : "") + v.toLocaleString("nl-NL", { maximumFractionDigits: 2, minimumFractionDigits: 2 }) + "R";
 
   T.push(function liquidation(rand) {
     for (;;) {
       const entry = pick(rand, [64000, 3200, 145, 2.4, 330, 158]) * (0.9 + rand() * 0.2);
       const lev = pick(rand, [3, 5, 10]);
-      const mm = 0.05;
+      const mm = pick(rand, [0.005, 0.01, 0.02]);
       const long = rand() < 0.5;
       const sgn = long ? -1 : 1;
       const good = entry * (1 + sgn * (1 / lev - mm));
@@ -1454,14 +1461,14 @@
       const c = entry * (1 + sgn * (1 / lev + mm)); // verkeerd om opgeteld
       if (!distinct([good, a, b, c], fmt)) continue;
       return {
-        cat: "risk",
+        cat: "leverage",
         title: "Liquidatieprijs",
-        prompt: `Je gaat <strong>${long ? "long" : "short"}</strong> op <strong>${fmt(entry)}</strong> met <strong>${lev}x</strong> leverage. De onderhoudsmarge is <strong>5%</strong>. Rond welke prijs word je (ongeveer) geliquideerd?`,
+        prompt: `Je gaat <strong>${long ? "long" : "short"}</strong> op <strong>${fmt(entry)}</strong> met <strong>${lev}x</strong> leverage. De onderhoudsmarge is <strong>${pctS(mm)}</strong>. Rond welke prijs word je (ongeveer) geliquideerd?`,
         svg: "",
         options: shuffle(rand, [
-          ok(fmt(good), `Liquidatie ≈ entry × (1 ${long ? "−" : "+"} (1/leverage − onderhoudsmarge)) = ${fmt(entry)} × (1 ${long ? "−" : "+"} (${fmt(1 / lev)} − 0,05)) = ${fmt(good)}. Je marge is 1/${lev} van de positie; als het verlies je marge min de onderhoudsmarge opeet, sluit de exchange je positie.`),
-          no(fmt(a), "Dit is entry ± 1/leverage: je vergeet de onderhoudsmarge. De exchange liquideert al eerder, zodra er nog 5% marge over is."),
-          no(fmt(b), "Dit is alleen de onderhoudsmarge van 5%. De leverage bepaalt hoeveel marge je hebt: die telt hier niet mee."),
+          ok(fmt(good), `Liquidatie ≈ entry × (1 ${long ? "−" : "+"} (1/leverage − onderhoudsmarge)) = ${fmt(entry)} × (1 ${long ? "−" : "+"} (${pctS(1 / lev)} − ${pctS(mm)})) = ${fmt(good)}. Je marge is 1/${lev} van de positie; als het verlies je marge min de onderhoudsmarge opeet, sluit de exchange je positie.`),
+          no(fmt(a), `Dit is entry ± 1/leverage: je vergeet de onderhoudsmarge. De exchange liquideert al eerder, zodra er nog ${pctS(mm)} marge over is.`),
+          no(fmt(b), `Dit is alleen de onderhoudsmarge van ${pctS(mm)}. De leverage bepaalt hoeveel marge je hebt: die telt hier niet mee.`),
           no(fmt(c), "Hier zijn de onderhoudsmarge en 1/leverage opgeteld in plaats van afgetrokken. Liquidatie komt juist eerder, niet later."),
         ]),
         lesson: "Liquidatie ≈ entry × (1 ∓ (1/leverage − onderhoudsmarge)). Je stop moet altijd ruim vóór je liquidatieprijs liggen; anders kies je minder leverage.",
@@ -1544,6 +1551,489 @@
         lesson: "Units = risico / (afstand tot stop + fee in + fee uit). Zo is je verlies bij de stop inclusief kosten precies 1R. De papier-modus en Advise rekenen zo.",
       };
     }
+  });
+
+  // ===== Leverage & margin =====
+  // Kern: je risico zit in je positie en je stop, niet in de leverage. Leverage bepaalt hoeveel
+  // onderpand (margin) vastligt en hoe dicht je liquidatie ligt. Liquidatie ≈ 1/leverage − onderhoudsmarge.
+  const rPlain = (v) => v.toLocaleString("nl-NL", { minimumFractionDigits: 2, maximumFractionDigits: 2 }) + "R";
+
+  T.push(function levBasics(rand) {
+    const Q = [
+      {
+        q: "Wat bepaalt hoeveel geld je verliest als je stop geraakt wordt?",
+        o: [
+          ["Je positiegrootte × de afstand tot je stop", true, "Positie $2000 met de stop 1% verderop = $20 verlies, of je nu 2x of 20x leverage gebruikt."],
+          ["De leverage die je instelt", false, "Leverage bepaalt alleen hoeveel onderpand (margin) vastligt. Met dezelfde positie en stop is je verlies hetzelfde."],
+          ["De margin die je inzet", false, "Je margin is onderpand. Je verliest hem pas helemaal bij liquidatie, en daar hoort je stop altijd vóór te liggen."],
+          ["Je liquidatieprijs", false, "Bij een goed plan kom je nooit bij je liquidatie: je stop sluit de trade eerder."],
+        ],
+      },
+      {
+        q: "Wat is <strong>margin</strong>?",
+        o: [
+          ["Het onderpand dat de exchange vasthoudt zolang je positie openstaat", true, "Bij een positie van $1000 met 10x ligt er $100 als margin vast. Dat is geen kosten, je krijgt het terug bij het sluiten (plus of min je resultaat)."],
+          ["De fee die je betaalt voor het lenen", false, "Lenen kost bij perpetuals funding, en elke order een fee. Margin is iets anders: onderpand."],
+          ["Je winst op de trade", false, "Winst of verlies komt bovenop of gaat af van je margin, maar is niet hetzelfde."],
+          ["Het bedrag dat de exchange je leent", false, "Het geleende deel is positie − margin. Margin is juist jouw eigen inleg als onderpand."],
+        ],
+      },
+      {
+        q: "Wat gebeurt er bij <strong>liquidatie</strong>?",
+        o: [
+          ["De exchange sluit je positie gedwongen en je margin is (grotendeels) weg", true, "Het verlies heeft je onderpand bijna opgegeten. De exchange sluit de positie om zichzelf te beschermen, vaak met een extra liquidatiefee."],
+          ["Je stop wordt automatisch verder weg gezet", false, "Een exchange verplaatst nooit je stop. Liquidatie is een gedwongen sluiting."],
+          ["Je krijgt een melding en kunt kiezen wat je doet", false, "Je krijgt soms een waarschuwing vooraf, maar bij de liquidatieprijs zelf grijpt de exchange direct in."],
+          ["Je positie wordt gehalveerd en loopt door", false, "Sommige exchanges liquideren in stappen, maar het resultaat is hetzelfde: je verliest je onderpand. Daar hoort je plan nooit te komen."],
+        ],
+      },
+      {
+        q: "Waarvoor gebruik je leverage in jouw range-methode?",
+        o: [
+          ["Om de positie die uit je risico-berekening komt in je saldo te laten passen", true, "Eerst bepaal je risico en stop, daaruit volgt de positie. Is die groter dan je saldo, dan heb je net genoeg leverage nodig om hem te openen. Niet meer."],
+          ["Om meer winst te maken per trade", false, "Meer winst komt van een grotere positie, en dus ook meer risico. Dat regel je met je risico%, niet met de leverage-knop."],
+          ["Om een kleinere stop te mogen nemen", false, "Je stop hoort bij de structuur (voorbij de deviatie), niet bij je leverage."],
+          ["Zo hoog mogelijk, want dan ligt er minder geld vast", false, "Hoe hoger de leverage, hoe dichter je liquidatie. Die moet ruim voorbij je stop liggen."],
+        ],
+      },
+      {
+        q: "Wat is het verschil tussen <strong>isolated</strong> en <strong>cross</strong> margin?",
+        o: [
+          ["Isolated: alleen de margin van die trade staat op het spel. Cross: je hele saldo dient als onderpand", true, "Met isolated kan één trade nooit meer kosten dan zijn eigen margin. Met cross schuift de exchange je hele saldo bij om liquidatie te voorkomen."],
+          ["Isolated is voor long, cross voor short", false, "Beide werken voor long en short. Het gaat om welk deel van je saldo als onderpand dient."],
+          ["Cross heeft lagere fees", false, "Fees zijn hetzelfde. Het verschil zit in hoeveel van je saldo geraakt kan worden."],
+          ["Isolated gebruikt geen leverage", false, "Je kunt bij beide leverage instellen."],
+        ],
+      },
+      {
+        q: "Wat is <strong>funding</strong> bij een perpetual future?",
+        o: [
+          ["Een regelmatige betaling tussen longs en shorts die de koers van de perp dicht bij de spotkoers houdt", true, "Is de funding positief, dan betalen longs aan shorts; negatief andersom. Je betaalt of ontvangt zolang je positie openstaat."],
+          ["Een eenmalige fee bij het openen", false, "Dat is de trading fee. Funding loopt door zolang je positie openstaat."],
+          ["Rente op je margin die je altijd ontvangt", false, "Funding kun je ook moeten betalen, afhankelijk van je kant en het teken van de rate."],
+          ["Een fee die alleen bij liquidatie wordt gerekend", false, "Bij liquidatie is er een aparte liquidatiefee. Funding is iets anders."],
+        ],
+      },
+      {
+        q: "Je houdt de positie en je stop gelijk, maar zet de leverage hoger. Wat verandert er?",
+        o: [
+          ["Er ligt minder margin vast en je liquidatie komt dichterbij", true, "Je verlies bij de stop blijft gelijk. Maar met minder onderpand is een kleinere beweging tegen je in genoeg voor liquidatie."],
+          ["Je verlies bij je stop wordt groter", false, "Het verlies is positie × stopafstand. Die blijven gelijk."],
+          ["Je betaalt meer fees", false, "Fees gaan over je positie, en die blijft gelijk."],
+          ["Je winst bij TP2 wordt groter", false, "Winst is ook positie × afstand. Die verandert niet."],
+        ],
+      },
+      {
+        q: "Waarover wordt de trading fee berekend als je met leverage handelt?",
+        o: [
+          ["Over je hele positie", true, "Een positie van $5000 met 10x kost bij 0,05% fee $2,50 per kant, ook al is je margin maar $500."],
+          ["Over je margin", false, "Dan zou leverage je fees verlagen. Dat is niet zo: de exchange rekent over de volledige positie."],
+          ["Alleen over je winst", false, "Je betaalt fees ook bij verlies, bij openen én sluiten."],
+          ["Over je hele saldo", false, "Je saldo doet er niet toe; het gaat om de grootte van de order."],
+        ],
+      },
+    ];
+    const s = pick(rand, Q);
+    return {
+      cat: "leverage",
+      title: "Leverage: de basis",
+      prompt: s.q,
+      svg: "",
+      options: shuffle(rand, s.o.map(([t, good, why]) => (good ? ok : no)(t, why))),
+      lesson: "Leverage is een gereedschap om je positie te laten passen, geen knop voor meer winst. Je risico = positie × afstand tot je stop.",
+    };
+  });
+
+  T.push(function levMargin(rand) {
+    for (;;) {
+      const pos = pick(rand, [500, 1000, 1500, 2000, 2500, 4000, 5000, 8000, 10000]);
+      const L = pick(rand, [2, 3, 4, 5, 8, 10, 20, 25]);
+      const good = pos / L, a = pos * L, b = pos, c = pos - pos / L;
+      if (!distinct([good, a, b, c], money)) continue;
+      return {
+        cat: "leverage",
+        title: "Hoeveel margin?",
+        prompt: `Je opent een positie van <strong>${money(pos)}</strong> met <strong>${L}x</strong> leverage. Hoeveel margin (onderpand) zet de exchange vast?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(money(good), `Margin = positie ÷ leverage = ${money(pos)} ÷ ${L} = ${money(good)}. De rest (${money(c)}) is het deel dat de exchange als het ware voorschiet.`),
+          no(money(a), "Dit is positie × leverage. Leverage maakt je positie groter dan je inleg, dus de margin is juist kleiner dan de positie."),
+          no(money(b), "Dit is de hele positie: dat zou zonder leverage (1x) zijn."),
+          no(money(c), `Dit is het geleende deel (positie − margin). Je eigen onderpand is ${money(good)}.`),
+        ]),
+        lesson: "Margin = positie ÷ leverage. Hogere leverage = minder onderpand vast, maar je positie (en dus je risico) blijft wat je zelf kiest.",
+      };
+    }
+  });
+
+  T.push(function levMinNeeded(rand) {
+    for (;;) {
+      const bal = pick(rand, [500, 1000, 2000, 2500, 5000]);
+      const r = pick(rand, [0.5, 1, 1.5, 2]) / 100;
+      const d = pick(rand, [0.25, 0.3, 0.4, 0.5, 0.6, 0.8, 1, 1.25, 1.5, 2, 3]) / 100;
+      const risk = bal * r, pos = risk / d, L = pos / bal;
+      const txt = (p, l) => `Positie ${money(p)} · ${l <= 1 ? "geen leverage nodig" : "minimaal " + levTxt(l)}`;
+      const good = txt(pos, L), a = txt(bal, 1), b = txt(risk, risk / bal), cL = d / r, c = txt(bal * cL, cL);
+      if (new Set([good, a, b, c]).size < 4) continue;
+      return {
+        cat: "leverage",
+        title: "Minimale leverage",
+        prompt: `Saldo <strong>${money(bal)}</strong>, risico <strong>${pctS(r)}</strong> per trade. Je stop ligt <strong>${pctS(d)}</strong> van je entry. Hoe groot wordt je positie, en hoeveel leverage heb je minimaal nodig?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(good, `Risico = ${money(bal)} × ${pctS(r)} = ${money(risk)}. Positie = risico ÷ stopafstand = ${money(risk)} ÷ ${pctS(d)} = ${money(pos)}. ${L <= 1 ? "Dat past in je saldo: je hebt geen leverage nodig." : `Leverage = positie ÷ saldo = ${money(pos)} ÷ ${money(bal)} = ${levTxt(L)}. Korter: risico% ÷ stop% = ${pctS(r)} ÷ ${pctS(d)}.`}`),
+          no(a, `Je hele saldo als positie: bij je stop verlies je dan ${money(bal * d)} (${pctS(d)} van ${money(bal)}), niet je geplande ${money(risk)}.`),
+          no(b, `${money(risk)} is wat je wilt verliezen bij je stop, niet de grootte van je positie. Met een positie van ${money(risk)} verlies je bij je stop maar ${money(risk * d)}.`),
+          no(c, "Hier is het omgedraaid (stop% ÷ risico%). De juiste formule is risico% ÷ stop%."),
+        ]),
+        lesson: "Positie = risico ÷ stopafstand. Minimale leverage = positie ÷ saldo = risico% ÷ stop%. Een krappe stop vraagt een grotere positie, en dus meer leverage.",
+      };
+    }
+  });
+
+  T.push(function levRiskSame(rand) {
+    for (;;) {
+      const pos = pick(rand, [1000, 2000, 2500, 4000, 5000, 8000]);
+      const d = pick(rand, [0.5, 0.8, 1, 1.5, 2]) / 100;
+      const [L1, L2] = pick(rand, [[2, 10], [5, 20], [3, 15], [4, 20], [2, 8], [3, 12]]);
+      if (1 / L2 - 0.005 < 1.5 * d) continue; // liquidatie moet ruim voorbij de stop liggen
+      const loss = pos * d, f = L2 / L1;
+      const good = `${money(loss)}, net als met ${L1}x`;
+      const a = `${f}x zo veel: ${money(loss * f)}`;
+      const b = `${f}x zo weinig: ${money(loss / f)}`;
+      const c = `Je hele margin: ${money(pos / L2)}`;
+      if (new Set([good, a, b, c]).size < 4 || Math.abs(pos / L2 - loss) < 0.01) continue;
+      return {
+        cat: "leverage",
+        title: "Verandert leverage je verlies?",
+        prompt: `Je opent een positie van <strong>${money(pos)}</strong>, met je stop <strong>${pctS(d)}</strong> van je entry. Je twijfelt tussen <strong>${L1}x</strong> en <strong>${L2}x</strong> leverage. Positie en stop blijven gelijk. Hoeveel verlies je bij je stop met <strong>${L2}x</strong>?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(good, `Verlies bij je stop = positie × stopafstand = ${money(pos)} × ${pctS(d)} = ${money(loss)}. Leverage staat niet in die som. Met ${L2}x zet je alleen minder margin vast: ${money(pos / L2)} in plaats van ${money(pos / L1)}. Wel ligt je liquidatie dichterbij: ongeveer ${pctS(1 / L2 - 0.005)} in plaats van ${pctS(1 / L1 - 0.005)} (met 0,5% onderhoudsmarge), nog steeds ruim voorbij je stop.`),
+          no(a, "Leverage vergroot je verlies alleen als je positie groter wordt. Hier blijft de positie gelijk, dus het verlies ook."),
+          no(b, "Minder margin betekent niet minder verlies. Het verlies hangt af van je positie en je stop."),
+          no(c, `Je hele margin verlies je pas bij liquidatie, ongeveer ${pctS(1 / L2 - 0.005)} verderop. Je stop op ${pctS(d)} sluit de trade eerder.`),
+        ]),
+        lesson: "Zelfde positie + zelfde stop = zelfde verlies, wat de leverage ook is. Leverage verandert alleen je margin en hoe dicht je liquidatie ligt.",
+      };
+    }
+  });
+
+  T.push(function levSameMargin(rand) {
+    for (;;) {
+      const M = pick(rand, [100, 200, 250, 500, 1000]);
+      const d = pick(rand, [0.5, 0.8, 1, 1.5, 2]) / 100;
+      const [L1, L2] = pick(rand, [[2, 10], [5, 20], [3, 15], [4, 20], [2, 8], [5, 10]]);
+      if (1 / L2 - 0.005 < 1.5 * d) continue;
+      const good = M * L2 * d, a = M * L1 * d, b = M * d, c = M;
+      if (!distinct([good, a, b, c], money)) continue;
+      return {
+        cat: "leverage",
+        title: "Zelfde inleg, meer leverage",
+        prompt: `Je zet bij elke trade <strong>${money(M)}</strong> margin in, met je stop <strong>${pctS(d)}</strong> van je entry. Tot nu toe gebruikte je <strong>${L1}x</strong>. Nu zet je de leverage op <strong>${L2}x</strong>, met dezelfde ${money(M)} margin. Hoeveel verlies je bij je stop?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(money(good), `Met dezelfde margin wordt je positie groter: ${money(M)} × ${L2} = ${money(M * L2)}. Verlies bij je stop = ${money(M * L2)} × ${pctS(d)} = ${money(good)}. Dat is ${L2 / L1}x zo veel als met ${L1}x (${money(a)}). Hier vergroot de leverage je risico dus wél, omdat je positie meegroeit.`),
+          no(money(a), `Dit is je verlies met ${L1}x. Met dezelfde margin en ${L2}x is je positie ${L2 / L1}x zo groot, en je verlies dus ook.`),
+          no(money(b), "Dit is de stopafstand over je margin, alsof je geen leverage gebruikt. Je verliest over je hele positie."),
+          no(money(c), "Je hele margin verlies je pas bij liquidatie. Je stop ligt eerder."),
+        ]),
+        lesson: "Houd je de margin gelijk en verhoog je de leverage, dan groeit je positie en je risico mee. Begin daarom altijd bij je risico%: positie = risico ÷ stopafstand.",
+      };
+    }
+  });
+
+  T.push(function levMarginLoss(rand) {
+    for (;;) {
+      const L = pick(rand, [2, 3, 5, 8, 10, 15, 20]);
+      const d = pick(rand, [0.3, 0.5, 0.8, 1, 1.5, 2, 3]) / 100;
+      if (L * d > 0.8 - 0.005 * L) continue; // stop moet vóór liquidatie liggen
+      const good = L * d, a = d, b = d / L, c = 1;
+      if (!distinct([good, a, b, c], pctS)) continue;
+      return {
+        cat: "leverage",
+        title: "Hoeveel van je margin?",
+        prompt: `Je opent een trade met <strong>${L}x</strong> leverage. Je stop ligt <strong>${pctS(d)}</strong> van je entry. Hoeveel procent van je <strong>margin</strong> ben je kwijt als je stop geraakt wordt?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(pctS(good), `Je positie is ${L}x je margin. Een beweging van ${pctS(d)} kost dus ${L} × ${pctS(d)} = ${pctS(good)} van je margin. Daarom tonen exchanges zulke grote procenten (ROE): ze rekenen over je margin, niet over je saldo.`),
+          no(pctS(a), `${pctS(d)} is het verlies over je positie. Over je margin is het ${L}x zo veel.`),
+          no(pctS(b), "Leverage maakt het verlies over je margin juist groter, niet kleiner."),
+          no(pctS(c), `Je hele margin verlies je pas bij liquidatie, rond ${pctS(1 / L - 0.005)} verderop (bij 0,5% onderhoudsmarge). Je stop ligt eerder.`),
+        ]),
+        lesson: "Verlies over je margin = leverage × koersbeweging. Komt dat in de buurt van 100%, dan ligt je liquidatie vóór je stop: kies dan minder leverage.",
+      };
+    }
+  });
+
+  T.push(function levRoe(rand) {
+    for (;;) {
+      const B = pick(rand, [1000, 2000, 5000, 10000]);
+      const M = pick(rand, [100, 200, 250, 500]);
+      const L = pick(rand, [5, 10, 20]);
+      const x = pick(rand, [1, 1.5, 2, 2.5, 3, 4]) / 100;
+      if (M > B / 2) continue;
+      const roe = L * x, gain = M * roe, good = gain / B, a = roe, b = x, c = (M * x) / B;
+      if (!distinct([good, a, b, c], pctS)) continue;
+      return {
+        cat: "leverage",
+        title: "ROE of rendement op je saldo?",
+        prompt: `Saldo <strong>${money(B)}</strong>. Je opent een long met <strong>${money(M)}</strong> margin en <strong>${L}x</strong> leverage. De koers stijgt <strong>${pctS(x)}</strong> en je sluit. De exchange toont <strong>+${pctS(roe)} ROE</strong>. Met hoeveel procent is je <strong>hele saldo</strong> gestegen (fees niet meegerekend)?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(pctS(good), `Positie = ${money(M)} × ${L} = ${money(M * L)}. Winst = ${money(M * L)} × ${pctS(x)} = ${money(gain)}. Op je saldo is dat ${money(gain)} ÷ ${money(B)} = ${pctS(good)}. De ROE van ${pctS(roe)} is alleen het rendement op je margin.`),
+          no(pctS(a), "Dit is de ROE: rendement op je margin. Die ziet er groot uit, maar zegt weinig over je account."),
+          no(pctS(b), "Dit is de koersbeweging. Je positie was groter dan je saldo-deel, dus het rendement is anders."),
+          no(pctS(c), "Hier is de leverage vergeten: je positie was " + L + "x je margin."),
+        ]),
+        lesson: "ROE = rendement op je margin, en dat ziet er altijd spectaculair uit. Meet je resultaat in R en in % van je saldo; dat doet je Portfolio.",
+      };
+    }
+  });
+
+  T.push(function levDanger(rand) {
+    const LEVS = [2, 3, 5, 8, 10, 15, 20, 25, 30, 40, 50, 75, 100];
+    for (;;) {
+      const d = pick(rand, [0.5, 0.8, 1, 1.5, 2, 3, 4]) / 100;
+      const m = pick(rand, [0.5, 1]) / 100;
+      const liq = (L) => 1 / L - m;
+      const safe = LEVS.filter((L) => liq(L) >= 1.5 * d);
+      const bad = LEVS.filter((L) => liq(L) <= d && liq(L) >= 0.001);
+      const askBad = rand() < 0.5;
+      if (askBad ? safe.length < 3 || !bad.length : bad.length < 3 || !safe.length) continue;
+      const pickN = (a, n) => shuffle(rand, a).slice(0, n);
+      const chosen = askBad ? [pick(rand, bad), ...pickN(safe, 3)] : [pick(rand, safe), ...pickN(bad, 3)];
+      const why = (L) =>
+        liq(L) <= d
+          ? `Met ${L}x word je geliquideerd na ongeveer 1/${L} − ${pctS(m)} = ${pct1(liq(L))} beweging. Dat is vóór je stop op ${pctS(d)}: je verliest je hele margin in plaats van 1R.`
+          : `Met ${L}x ligt je liquidatie rond 1/${L} − ${pctS(m)} = ${pct1(liq(L))}, ruim voorbij je stop op ${pctS(d)}. Je stop sluit de trade eerst.`;
+      return {
+        cat: "leverage",
+        title: askBad ? "Welke leverage is te veel?" : "Welke leverage is veilig?",
+        prompt: `Je stop ligt <strong>${pctS(d)}</strong> van je entry. De onderhoudsmarge is <strong>${pctS(m)}</strong>. ${askBad ? "Bij welke leverage word je <strong>geliquideerd vóórdat je stop geraakt wordt</strong>?" : "Bij welke leverage ligt je liquidatie <strong>ruim voorbij je stop</strong>?"}`,
+        svg: "",
+        options: shuffle(rand, chosen.map((L, i) => (i === 0 ? ok : no)(`${L}x`, why(L)))),
+        lesson: "Liquidatie ≈ 1/leverage − onderhoudsmarge. Die afstand moet ruim groter zijn dan je stopafstand (liefst 1,5 à 2 keer).",
+      };
+    }
+  });
+
+  T.push(function levMaxSafe(rand) {
+    for (;;) {
+      const d = pick(rand, [0.4, 0.5, 0.8, 1, 1.25, 1.5, 2, 2.5, 3]) / 100;
+      const m = pick(rand, [0.5, 1]) / 100;
+      const good = 1 / (2 * d + m), a = 1 / d, b = 1 / (d + m), c = 1 / (2 * d);
+      if (!distinct([good, a, b, c], levTxt)) continue;
+      return {
+        cat: "leverage",
+        title: "Maximale veilige leverage",
+        prompt: `Je stop ligt <strong>${pctS(d)}</strong> van je entry, de onderhoudsmarge is <strong>${pctS(m)}</strong>. Je wilt dat je liquidatie minstens <strong>twee keer zo ver</strong> ligt als je stop. Wat is de hoogste leverage die je dan mag gebruiken?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(levTxt(good), `Liquidatie ≈ 1/L − ${pctS(m)} moet ≥ 2 × ${pctS(d)} zijn. Dus 1/L ≥ ${pctS(2 * d + m)}, en L ≤ 1 ÷ ${pctS(2 * d + m)} = ${levTxt(good)}. Minder mag altijd; meer niet.`),
+          no(levTxt(a), "Dit is 1 ÷ stopafstand: dan ligt je liquidatie (zonder onderhoudsmarge) precies óp je stop. Met de onderhoudsmarge zelfs ervoor."),
+          no(levTxt(b), "Hier ligt je liquidatie precies op je stop: geen enkele marge voor een wick of slippage."),
+          no(levTxt(c), "Hier is de onderhoudsmarge vergeten. De exchange liquideert al iets eerder."),
+        ]),
+        lesson: "Max leverage ≈ 1 ÷ (2 × stopafstand + onderhoudsmarge). Bijna altijd heb je veel minder nodig: gebruik de minimale leverage uit je positie-berekening.",
+      };
+    }
+  });
+
+  T.push(function levLiqStop(rand) {
+    const wantSafe = rand() < 0.5;
+    for (;;) {
+      const entry = pick(rand, [64000, 3200, 145, 2.4, 330, 158, 97000]) * (0.9 + rand() * 0.2);
+      const L = pick(rand, [5, 10, 20, 25, 50]);
+      const m = pick(rand, [0.5, 1]) / 100;
+      const d = pick(rand, [0.5, 1, 1.5, 2, 3, 4, 6]) / 100;
+      const long = rand() < 0.5, sg = long ? -1 : 1;
+      const dist = 1 / L - m;
+      if (dist <= 0.002 || Math.abs(dist - d) < 0.3 * d) continue;
+      const liq = entry * (1 + sg * dist), sl = entry * (1 + sg * d);
+      const safe = dist > d;
+      if (safe !== wantSafe) continue; // even vaak veilig als te veel leverage
+      const wrongP = entry * (1 + sg * (1 / L + m));
+      const v = (s) => (s ? "ná je stop: je stop sluit de trade eerst" : "vóór je stop: je wordt geliquideerd voordat je stop geraakt wordt");
+      const good = `≈ ${fmt(liq)}, ${v(safe)}`;
+      const a = `≈ ${fmt(liq)}, ${v(!safe)}`;
+      const b = `≈ ${fmt(wrongP)}, ${v(1 / L + m > d)}`;
+      const c = `≈ ${fmt(entry * (1 - sg * dist))}, ${v(true)}`;
+      if (new Set([good, a, b, c]).size < 4) continue;
+      return {
+        cat: "leverage",
+        title: "Liquidatie vóór of na je stop?",
+        prompt: `Je gaat <strong>${long ? "long" : "short"}</strong> op <strong>${fmt(entry)}</strong> met <strong>${L}x</strong> leverage, onderhoudsmarge <strong>${pctS(m)}</strong>. Je stop staat op <strong>${fmt(sl)}</strong>. Waar ligt je liquidatie ongeveer, en is dat vóór of na je stop?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(good, `Liquidatie ≈ entry × (1 ${long ? "−" : "+"} (1/${L} − ${pctS(m)})) = ${fmt(entry)} × (1 ${long ? "−" : "+"} ${pctS(dist)}) = ${fmt(liq)}. Je stop ligt ${pctS(d)} van je entry, je liquidatie ${pctS(dist)}. ${safe ? "Je stop komt eerst: in orde." : `Je liquidatie komt eerst: kies minder leverage (bijv. ${levTxt(Math.floor(1 / (2 * d + m) * 10) / 10 || 1)} of lager).`}`),
+          no(a, `De prijs klopt, maar de conclusie niet. Bij een ${long ? "long" : "short"} gaat de koers ${long ? "omlaag" : "omhoog"} richting je stop (${pctS(d)}) en je liquidatie (${pctS(dist)}): ${safe ? "je stop ligt dichterbij en komt dus eerst" : "je liquidatie ligt dichterbij en komt dus eerst"}.`),
+          no(b, "Hier is de onderhoudsmarge opgeteld in plaats van afgetrokken. De exchange liquideert juist eerder, niet later."),
+          no(c, `Dit ligt aan de verkeerde kant. Een ${long ? "long" : "short"} wordt geliquideerd als de koers ${long ? "daalt" : "stijgt"}.`),
+        ]),
+        lesson: "Reken vóór elke trade je liquidatie uit en vergelijk hem met je stop. Ligt hij ervoor, dan kies je minder leverage, nooit een verdere stop.",
+      };
+    }
+  });
+
+  T.push(function levFeeR(rand) {
+    for (;;) {
+      const d = pick(rand, [0.25, 0.3, 0.4, 0.5, 0.8, 1, 1.5, 2, 3]) / 100;
+      const f = pick(rand, [0.02, 0.04, 0.05, 0.06]) / 100;
+      const L = pick(rand, [3, 5, 10, 20]);
+      const good = (2 * f) / d, a = f / d, b = ((2 * f) / d) * L, c = (2 * f) / d / L;
+      if (!distinct([good, a, b, c], rPlain)) continue;
+      return {
+        cat: "leverage",
+        title: "Fees in R",
+        prompt: `Je stop ligt <strong>${pctS(d)}</strong> van je entry. De fee is <strong>${pctS(f)}</strong> bij instappen én bij uitstappen, over je hele positie. Je gebruikt <strong>${L}x</strong> leverage. Hoeveel R kosten de fees je per trade (heen en terug)?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(rPlain(good), `1R = positie × ${pctS(d)}. Fees = positie × ${pctS(f)} × 2. In R: (2 × ${pctS(f)}) ÷ ${pctS(d)} = ${rPlain(good)}. De leverage staat er niet in: de fee hangt af van je positie, en die volgt uit je risico en je stop. ${good >= 0.15 ? "Dat is veel: zo'n krappe stop kost je een flink stuk van je edge." : "Dat is te overzien."}`),
+          no(rPlain(a), "Dit is alleen de fee bij instappen. Bij het sluiten betaal je opnieuw."),
+          no(rPlain(b), "Leverage vermenigvuldigt de fee niet. De fee gaat over je positie, en die bepaal je met je risico en je stop."),
+          no(rPlain(c), "Hier is de fee door de leverage gedeeld, alsof je alleen over je margin betaalt. Je betaalt over de hele positie."),
+        ]),
+        lesson: "Fees in R ≈ 2 × fee% ÷ stop%. Hoe krapper je stop, hoe zwaarder de fees wegen. Leverage verandert dat niet.",
+      };
+    }
+  });
+
+  T.push(function levFeeDollar(rand) {
+    for (;;) {
+      const M = pick(rand, [100, 200, 250, 500, 1000]);
+      const L = pick(rand, [2, 5, 10, 20, 25]);
+      const f = pick(rand, [0.02, 0.05, 0.06]) / 100;
+      const good = 2 * M * L * f, a = 2 * M * f, b = M * L * f, c = 2 * M * f * L * L;
+      if (!distinct([good, a, b, c], money)) continue;
+      return {
+        cat: "leverage",
+        title: "Wat kosten de fees?",
+        prompt: `Je zet <strong>${money(M)}</strong> margin in met <strong>${L}x</strong> leverage. De fee is <strong>${pctS(f)}</strong> per order, over je hele positie. Wat betaal je aan fees voor openen én sluiten samen?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(money(good), `Positie = ${money(M)} × ${L} = ${money(M * L)}. Fee per kant = ${money(M * L)} × ${pctS(f)} = ${money(M * L * f)}. Heen en terug = ${money(good)}.`),
+          no(money(a), "Dit is de fee over je margin. De exchange rekent over de hele positie."),
+          no(money(b), "Dit is alleen de fee bij openen. Bij het sluiten betaal je nog een keer."),
+          no(money(c), "Hier is de leverage twee keer meegeteld."),
+        ]),
+        lesson: "Fees gaan over je hele positie (margin × leverage), bij openen én sluiten. Met veel leverage op een kleine margin betaal je dus flink.",
+      };
+    }
+  });
+
+  T.push(function levFunding(rand) {
+    for (;;) {
+      const N = pick(rand, [1000, 2000, 5000, 10000, 20000]);
+      const r = pick(rand, [0.001, 0.002, 0.003, 0.005, 0.01]) / 100 * (rand() < 0.7 ? 1 : -1);
+      const h = pick(rand, [8, 12, 24, 48, 72, 168]);
+      const L = pick(rand, [5, 10, 20]);
+      const long = rand() < 0.5;
+      const amt = N * Math.abs(r) * h;
+      const pays = (r > 0) === long;
+      const t = (p, x) => `Je ${p ? "betaalt" : "ontvangt"} ${money(x)}`;
+      const good = t(pays, amt), a = t(!pays, amt), b = t(pays, amt / L), c = t(pays, N * Math.abs(r));
+      if (new Set([good, a, b, c]).size < 4 || amt < 0.05) continue;
+      return {
+        cat: "leverage",
+        title: "Funding",
+        prompt: `Je hebt een <strong>${long ? "long" : "short"}</strong> van <strong>${money(N)}</strong> (met ${L}x leverage) op een perpetual. De funding rate is <strong>${r > 0 ? "+" : "−"}${pctS(Math.abs(r))} per uur</strong> en blijft gelijk. Je houdt de positie <strong>${h} uur</strong> vast. Wat gebeurt er met de funding?`,
+        svg: "",
+        options: shuffle(rand, [
+          ok(good, `${r > 0 ? "Positieve" : "Negatieve"} funding: ${r > 0 ? "longs betalen aan shorts" : "shorts betalen aan longs"}. Jij bent ${long ? "long" : "short"}, dus je ${pays ? "betaalt" : "ontvangt"}. Bedrag = positie × rate × uren = ${money(N)} × ${pctS(Math.abs(r))} × ${h} = ${money(amt)}.`),
+          no(a, `Verkeerde kant: bij ${r > 0 ? "positieve" : "negatieve"} funding ${r > 0 ? "betalen longs aan shorts" : "betalen shorts aan longs"}.`),
+          no(b, "Funding gaat over je hele positie, niet over je margin."),
+          no(c, `Dit is één uur funding. Over ${h} uur telt het ${h} keer op.`),
+        ]),
+        lesson: "Funding = positie × rate × aantal periodes. Positief: longs betalen. Bij korte trades is het klein; houd je dagen vast, reken het dan mee in je R:R.",
+      };
+    }
+  });
+
+  T.push(function levScenario(rand) {
+    const SC = [
+      {
+        q: "Je long loopt richting je stop. Je overweegt de stop weg te halen en extra margin bij te storten, zodat je niet geliquideerd wordt.",
+        o: [
+          ["Stop laten staan en het verlies van 1R nemen", true, "Je stop is je plan. Margin bijstorten om een verliezende trade open te houden maakt van 1R verlies een veel groter verlies."],
+          ["Margin bijstorten en de stop weghalen", false, "Zo verandert een gecontroleerd verlies in een ongecontroleerd verlies. Dit is hoe accounts leeglopen."],
+          ["De stop verder weg zetten", false, "Je stop hoort bij de structuur. Verder weg zetten = meer riskeren dan gepland."],
+          ["Bijkopen om je gemiddelde entry te verbeteren", false, "Bijkopen in een verliezende trade vergroot je risico precies op het verkeerde moment."],
+        ],
+      },
+      {
+        q: "De exchange biedt 100x leverage. Je stop ligt 1,5% van je entry, onderhoudsmarge 0,5%.",
+        o: [
+          ["Niet doen: met 100x word je al na ±0,5% geliquideerd, ver vóór je stop", true, "1/100 − 0,5% = 0,5%. Je stop op 1,5% wordt nooit bereikt: één kleine wick kost je hele margin."],
+          ["Prima, je risico zit toch in je stop", false, "Alleen als je liquidatie voorbij je stop ligt. Hier ligt hij ervoor."],
+          ["Prima, als je de stop maar op 0,4% zet", false, "Je stop hoort bij de structuur, niet bij je leverage. Een te krappe stop wordt telkens uitgewicked."],
+          ["Prima, met cross margin kan het niet misgaan", false, "Met cross schuift de exchange je hele saldo bij: dan kan het juist nog meer kosten."],
+        ],
+      },
+      {
+        q: "Je wilt deze maand meer verdienen. Je overweegt je leverage van 5x naar 20x te zetten, met dezelfde margin per trade.",
+        o: [
+          ["Niet doen: met dezelfde margin wordt je positie 4x groter en riskeer je 4x zo veel", true, "Meer leverage met dezelfde margin = grotere positie = grotere verliezen. Wil je bewust meer risico, verhoog dan je risico% een klein beetje, en alleen met een bewezen edge."],
+          ["Doen: leverage verandert je risico niet", false, "Dat geldt alleen als je positie gelijk blijft. Met dezelfde margin groeit je positie mee."],
+          ["Doen, maar dan zonder stop", false, "Zonder stop is je risico onbeperkt tot de liquidatie."],
+          ["Doen, en met een krappere stop", false, "Een krappere stop wordt vaker uitgewicked en kost meer aan fees in R."],
+        ],
+      },
+      {
+        q: "De funding is +0,01% per uur. Je wilt een long een week (168 uur) vasthouden. Je stop ligt 2% van je entry.",
+        o: [
+          ["Funding meerekenen: ±1,7% van je positie, bijna 0,85R", true, "0,01% × 168 = 1,68% van je positie. Met je stop op 2% is dat 0,84R aan kosten. Reken het mee in je R:R, of kies een kortere trade."],
+          ["Geen probleem, funding is altijd klein", false, "Per uur is het klein, maar over een week telt het flink op."],
+          ["Je ontvangt funding als long", false, "Bij positieve funding betalen longs aan shorts."],
+          ["Funding geldt alleen voor je margin, dus het valt mee", false, "Funding gaat over je hele positie."],
+        ],
+      },
+      {
+        q: "Je hebt drie trades open op cross margin. Eén ervan gaat hard tegen je in, zonder stop.",
+        o: [
+          ["Isolated margin gebruiken en altijd een stop zetten", true, "Met cross kan één trade je hele saldo aanspreken en ook je andere posities in gevaar brengen. Met isolated en een stop is het verlies per trade begrensd."],
+          ["Niets aan de hand, cross verdeelt het risico", false, "Cross verdeelt het niet, het koppelt alles aan elkaar."],
+          ["De andere twee trades sluiten om margin vrij te maken", false, "Dan offer je goede trades op voor een trade zonder plan."],
+          ["Meer geld storten", false, "Dat vergroot alleen wat je kunt verliezen."],
+        ],
+      },
+      {
+        q: "Je stop ligt maar 0,3% van je entry, en je gebruikt 30x. De fee is 0,05% per kant.",
+        o: [
+          ["De fees kosten ±0,33R per trade: zoek een setup met meer ruimte, of sla over", true, "2 × 0,05% ÷ 0,3% = 0,33R. Een derde van je risico gaat al naar fees. Een krappe stop met hoge leverage ziet er efficiënt uit, maar eet je edge op."],
+          ["Prima, met 30x zijn de fees juist lager", false, "Fees gaan over je positie. Een krappe stop = grote positie = hoge fees."],
+          ["Prima, fees doen er niet toe", false, "Bij een krappe stop doen fees juist veel toe. Je backtest liet dat ook zien."],
+          ["Leverage verlagen naar 10x lost de fees op", false, "Met minder leverage en dezelfde positie blijven de fees gelijk. De positie (dus je stop) is het probleem."],
+        ],
+      },
+      {
+        q: "Over tien minuten komt FOMC-nieuws. Je zit in een trade met 25x leverage.",
+        o: [
+          ["Positie verkleinen of sluiten vóór het nieuws", true, "Bij groot nieuws kan de koers je stop overslaan (slippage). Met 25x ligt je liquidatie maar ±3,5% weg: één nieuwscandle kan je hele margin kosten."],
+          ["Leverage nog hoger zetten om de beweging te pakken", false, "Dat is gokken op nieuws, met je liquidatie nog dichterbij."],
+          ["Stop weghalen zodat je niet uitgewicked wordt", false, "Zonder stop beslist de liquidatie voor je."],
+          ["Niets doen, je stop beschermt je altijd", false, "Bij nieuws kan de koers door je stop heen springen. Je stop is geen garantie op de exacte prijs."],
+        ],
+      },
+      {
+        q: "Je hebt drie verliezen op rij en wilt de leverage verhogen om het in één trade terug te winnen.",
+        o: [
+          ["Niet doen: zelfde risico% aanhouden en je plan volgen", true, "Drie verliezen op rij zijn normaal bij een winrate van 40–50%. Hogere leverage met meer inzet is revenge trading met extra liquidatierisico."],
+          ["Doen, de volgende trade wint vast", false, "Elke trade staat op zichzelf. Een reeks verliezen maakt een winst niet waarschijnlijker."],
+          ["Doen, maar met cross margin", false, "Dan zet je ook nog je hele saldo op het spel."],
+          ["Een week niet traden en daarna 2x zo groot", false, "Pauze is goed, maar daarna gewoon je normale risico%."],
+        ],
+      },
+    ];
+    const s = pick(rand, SC);
+    return {
+      cat: "leverage",
+      title: "Leverage-scenario",
+      prompt: s.q + " <strong>Wat doe je?</strong>",
+      svg: "",
+      options: shuffle(rand, s.o.map(([t, good, why]) => (good ? ok : no)(t, why))),
+      lesson: "Leverage vergroot je fouten net zo hard als je winst. Met een vast risico%, een stop en isolated margin houd je het onder controle.",
+    };
   });
 
   T.push(function mindset(rand) {
@@ -1756,6 +2246,11 @@
             <p><b>Continuation</b> (voortzetting): bullish/bearish rectangle, pennant en wedge ná een sterke beweging. Een rectangle is een kleine range; de uitbraak met acceptatie + retest is je breakout-setup.</p>
             <p><b>Bilateraal</b>: ascending, descending en symmetrical triangle. Kan twee kanten op: niet vooraf traden, wacht op de uitbraak met acceptatie en een retest.</p>
             <p class="muted">Patronen zijn waarschijnlijkheden, geen garantie. Niet rond de mid, niet als enige reden, en je targets blijven de mid en de andere rand van je range.</p></div>
+          <div class="span-all"><h3>Leverage & margin</h3>
+            <p><b>Je risico zit in je stop, niet in je leverage.</b> Verlies bij je stop = positie × afstand tot je stop. Eerst je risico, dan je positie: <b>positie = risico ÷ stopafstand</b>. Leverage heb je alleen nodig als die positie groter is dan je saldo: <b>minimale leverage = risico% ÷ stop%</b> (1% risico, stop op 0,5% = 2x).</p>
+            <p><b>Margin</b> = positie ÷ leverage: het onderpand dat vastligt. <b>Liquidatie</b> ≈ 1/leverage − onderhoudsmarge (10x ≈ 9%, 20x ≈ 4,5%, 50x ≈ 1,5%). Die moet ruim voorbij je stop liggen, liefst twee keer zo ver: <b>max leverage ≈ 1 ÷ (2 × stop% + onderhoudsmarge)</b>.</p>
+            <p><b>Fees</b> gaan over je hele positie: in R ≈ 2 × fee% ÷ stop%. Krappe stops kosten dus veel. <b>Funding</b> bij perpetuals: positief = longs betalen shorts; telt op als je lang vasthoudt. <b>ROE</b> op de exchange is rendement op je margin, niet op je saldo.</p>
+            <p class="muted">Gebruik isolated margin, altijd een stop, en nooit margin bijstorten om een verliezende trade open te houden. Zelfde margin met meer leverage = grotere positie = meer risico.</p></div>
           <div><h3>RSI</h3><p>&gt; 70 overbought, &lt; 30 oversold, plus divergenties. Lagging: alleen bij een interessant level in je range en samen met triggers.</p></div>
         </div>
         <p class="muted small">Nog niet in deze transcripts: trendlijnen als trigger binnen de range en ‘red zones’. Die modules kunnen er later bij.</p>
