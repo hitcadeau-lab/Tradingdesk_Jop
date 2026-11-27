@@ -929,7 +929,8 @@
   function reviewSectionHTML(t) {
     if (!TD.tradeReview) return "";
     let a = t.assessment;
-    if (!a && t.snapshot) {
+    // Opnieuw berekenen als hij er nog niet is of met een oudere versie gemaakt is.
+    if ((!a || a.v !== 2) && t.snapshot) {
       try {
         a = TD.tradeReview.assessTrade(t);
         if (a) S.saveTrade({ ...S.getTrade(t.id), assessment: a }); // eenmalig berekenen en bewaren

@@ -173,7 +173,7 @@
       fails > 0 || signal.status === "expired" || signal.status === "invalid" || signal.status === "untradeable"
         ? { key: "skip", label: "Niet spelen", text: "Een of meer principes zijn niet in orde. Sla deze setup over of wacht op een nieuwe." }
         : warns >= 2
-        ? { key: "doubt", label: "Twijfel", text: "Speelbaar, maar met kanttekeningen. Wacht op een betere entry, of speel kleiner." }
+        ? { key: "doubt", label: "Twijfel", text: "Geen harde fout, maar wel meerdere aandachtspunten. Alleen spelen als je die bewust accepteert: wacht op een betere entry, of speel kleiner." }
         : signal.status === "planned"
         ? { key: "plan", label: "Klaarzetten", text: "Een plan voor de toekomst: zet een alert of limit order bij de rand, en speel hem alleen na deviatie, reclaim en retest." }
         : { key: "play", label: "Speelbaar", text: "De setup voldoet aan de range-principes. Loop nog wel je Trade Entry Checklist door (emotie, nieuws, risico)." };
@@ -206,15 +206,21 @@
           : "Een jonge range: een uitbraak uit een zwakke structuur is minder betrouwbaar."
       }`
     );
-    if (planned)
+    if (!planned && signal.acceptBars == null)
+      add("accept", "Acceptatie buiten de range", "info", "Kon niet worden vastgesteld uit de grafiek. Controleer zelf of de koers meerdere candles op rij buiten de range sloot.");
+    else if (planned)
       add("accept", "Acceptatie", "info", `Nog geen uitbraak. Wacht tot minstens 6 candles op rij buiten de ${edgeName} sluiten. Eén candle of een lont erdoor is nog een deviatie.`);
     else
       add(
         "accept",
         "Acceptatie buiten de range",
-        signal.acceptBars >= 8 ? "pass" : "warn",
-        `${signal.acceptBars} closes op rij buiten de ${edgeName}. ${
-          signal.acceptBars >= 8 ? "Duidelijke acceptatie: de markt aanvaardt de nieuwe prijzen." : "Net genoeg acceptatie. Hoe langer de koers buiten blijft, hoe kleiner de kans dat het toch een deviatie is."
+        signal.acceptBars >= 8 ? "pass" : signal.acceptBars >= 6 ? "warn" : "fail",
+        `${signal.acceptBars} close${signal.acceptBars === 1 ? "" : "s"} op rij buiten de ${edgeName}. ${
+          signal.acceptBars >= 8
+            ? "Duidelijke acceptatie: de markt aanvaardt de nieuwe prijzen."
+            : signal.acceptBars >= 6
+            ? "Net genoeg acceptatie. Hoe langer de koers buiten blijft, hoe kleiner de kans dat het toch een deviatie is."
+            : "Te weinig: volgens je regels is het pas een breakout bij minstens 6 closes op rij buiten de range. Dit kan nog een deviatie zijn."
         }`
       );
     add(
@@ -270,8 +276,10 @@
     const before = candles.filter((c) => c.time < range.startTime);
     const piv = TD.rangeEngine.pivots(before, 3);
     const levels = (long ? piv.highs.map((i) => before[i].high) : piv.lows.map((i) => before[i].low)).filter((p) => (p - edge) * sgn > 0.05 * h);
-    const inTp1 = levels.filter((p) => (p - signal.tp1) * sgn < 0);
-    const inTp2 = levels.filter((p) => (p - signal.tp1) * sgn >= 0 && (p - signal.tp2) * sgn < 0);
+    // Elk level één keer (afgerond op de prijsprecisie), dichtstbijzijnde eerst.
+    const uniq = (arr) => [...new Map(arr.map((p) => [TD.util.price(p), p])).values()].sort((a, b) => (a - b) * sgn);
+    const inTp1 = uniq(levels.filter((p) => (p - signal.tp1) * sgn < 0));
+    const inTp2 = uniq(levels.filter((p) => (p - signal.tp1) * sgn >= 0 && (p - signal.tp2) * sgn < 0));
     const word = long ? "weerstand" : "support";
     add(
       "room",
@@ -313,7 +321,7 @@
         : planned || signal.status === "accepted"
         ? { key: "plan", label: "Klaarzetten", text: `Zet een limit order op de retest van de oude ${edgeName}, met de stop terug binnen de range. Speel kleiner dan een range-trade.` }
         : warns >= 1
-        ? { key: "doubt", label: "Twijfel", text: "Speelbaar, maar met kanttekeningen, en breakouts mislukken vaker. Speel kleiner (halve risico) of sla over." }
+        ? { key: "doubt", label: "Twijfel", text: "Geen harde fout, maar wel aandachtspunten, en breakouts mislukken vaker. Alleen spelen met kleiner risico (bijv. de helft), anders overslaan." }
         : { key: "play", label: "Speelbaar", text: "Sterke breakout die aan alle eisen voldoet. Toch: speel kleiner dan een range-trade en loop je Trade Entry Checklist door." };
     return { checks, verdict };
   }
