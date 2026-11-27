@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.18.0",
+  "version": "1.18.1",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 5,
     "webMinShell": 5,
-    "releaseNotes": "Trades: TF-kolom en filter. Op elke trade de beoordeling op de range-principes van het moment van plaatsen, met een leerpunt na het sluiten."
+    "releaseNotes": "Beoordeling per trade verbeterd: acceptatie wordt berekend, levels niet dubbel, duidelijkere Twijfel-tekst en een leerpunt per oordeel."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
