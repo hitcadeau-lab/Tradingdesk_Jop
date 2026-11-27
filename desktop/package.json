@@ -1,7 +1,7 @@
 {
   "name": "tradingdesk",
   "productName": "Tradingdesk",
-  "version": "1.18.1",
+  "version": "1.19.0",
   "description": "Tradingdesk: range trading journal, portfolio en leerschool",
   "main": "main.js",
   "private": true,
@@ -12,7 +12,7 @@
     "repo": "hitcadeau-lab/Tradingdesk_Jop",
     "shellVersion": 5,
     "webMinShell": 5,
-    "releaseNotes": "Beoordeling per trade verbeterd: acceptatie wordt berekend, levels niet dubbel, duidelijkere Twijfel-tekst en een leerpunt per oordeel."
+    "releaseNotes": "Nieuwe tab Backtest: test de strategie op de Kraken-historie, per aantal groene, oranje en rode signalen en per check, met finetune-opties, een conclusie en wat je bedrag was geworden (inclusief vergelijking met kopen en vasthouden)."
   },
   "scripts": {
     "copy-web": "node scripts/copy-web.js",
