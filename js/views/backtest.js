@@ -157,7 +157,7 @@
               })()
             : ""
         }
-        <p class="muted small">${esc(shortSym(res.ticker))} · ${res.tfs.map((t) => (t === "1h" ? "1H" : t === "4h" ? "4H" : t)).join(", ")} · ${esc(res.periodLabel)} · ${res.setups.join(" + ")} · fee ${String(res.feePct).replace(".", ",")}% per kant · stop ${Math.round((res.cfg.stopBuf ?? 0.03) * 100)}% voorbij de lont · entry ${res.cfg.entryMode === "edge" ? "limit op de rand" : "op de close"}${res.noOverlap ? " · 1 trade tegelijk" : ""} · getest op ${date(res.at, true)}</p>
+        <p class="muted small">${esc(shortSym(res.ticker))} · ${res.tfs.map((t) => (t === "1h" ? "1H" : t === "4h" ? "4H" : t)).join(", ")} · ${esc(res.periodLabel)} · ${res.setups.join(" + ")} · fee ${String(res.feePct).replace(".", ",")}% per kant · stop ${Math.round((res.cfg.stopBuf ?? 0.03) * 100)}% voorbij de lont · entry ${res.cfg.entryMode === "edge" ? "limit op de rand" : "op de close"} · marktfilter: ${({ all: "geen", side: "alleen zijwaarts", with: "zijwaarts of met de trend mee" })[res.cfg.regime || "all"]}${res.noOverlap ? " · 1 trade tegelijk" : ""} · getest op ${date(res.at, true)}</p>
       </section>
 
       <section class="panel">
@@ -176,7 +176,21 @@
           ${["Reclaim", "Breakout"].filter((s) => res.setups.includes(s)).map((s) => row(s, T.filter((x) => x.setup === s))).join("")}
           ${res.tfs.map((tf) => row(tf === "1h" ? "1H" : tf === "4h" ? "4H" : tf, T.filter((x) => x.tf === tf))).join("")}
           ${["Long", "Short"].map((d) => row(d, T.filter((x) => x.direction === d))).join("")}
+          ${T.some((x) => x.regime)
+            ? [["zijwaarts", "Zijwaartse markt"], ["stijgend", "Stijgende markt"], ["dalend", "Dalende markt"]]
+                .filter(([k]) => T.some((x) => x.regime === k))
+                .map(([k, l]) => row(l, T.filter((x) => x.regime === k)))
+                .join("") +
+              ["stijgend", "dalend"]
+                .map((k) => {
+                  const withT = T.filter((x) => x.regime === k && (k === "stijgend") === (x.direction === "Long"));
+                  const against = T.filter((x) => x.regime === k && (k === "stijgend") !== (x.direction === "Long"));
+                  return (withT.length ? row(`&nbsp;&nbsp;↳ ${k === "stijgend" ? "stijgend" : "dalend"}, met de trend mee`, withT) : "") + (against.length ? row(`&nbsp;&nbsp;↳ ${k === "stijgend" ? "stijgend" : "dalend"}, tegen de trend in`, against) : "");
+                })
+                .join("")
+            : ""}
         </tbody></table>
+        ${T.some((x) => x.regime) ? `<p class="muted small">Marktfase: hoe recht de koers liep over de laatste 100 candles van die timeframe. Liep hij vooral heen en weer, dan is het een zijwaartse markt; ging hij duidelijk één kant op, dan is het stijgend of dalend.</p>` : ""}
       </section>
 
       <section class="panel">
@@ -290,6 +304,7 @@
           <div><div class="label">Setups</div>${["Reclaim", "Breakout"].map((s) => `<label class="chk inline-chk"><input type="checkbox" data-setup="${s}" ${cfg.setups.includes(s) ? "checked" : ""}> ${s}</label>`).join("")}</div>
           <label>Stop voorbij de lont<select id="bt-stop">${[[0.03, "3% van de range (krap)"], [0.1, "10% van de range"], [0.2, "20% van de range (aanbevolen)"], [0.3, "30% van de range"]].map(([v, l]) => `<option value="${v}" ${+cfg.stopBuf === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
           <label>Entry<select id="bt-entry"><option value="close" ${cfg.entryMode !== "edge" ? "selected" : ""}>Op de close van de trigger-candle (standaard)</option><option value="edge" ${cfg.entryMode === "edge" ? "selected" : ""}>Limit op de rand (alleen als de koers terugkomt)</option></select></label>
+          <label>Marktfilter<select id="bt-regime">${[["all", "Geen: alle setups"], ["side", "Alleen in een zijwaartse markt"], ["with", "Zijwaarts, of in een trend alleen met de trend mee"]].map(([v, l]) => `<option value="${v}" ${(cfg.regime || "all") === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
           <label class="chk span2"><input type="checkbox" id="bt-overlap" ${cfg.noOverlap ? "checked" : ""}> Maximaal 1 trade tegelijk per timeframe (realistischer als je één positie tegelijk aanhoudt)</label>
         </div>
         <div class="row gap" style="margin-top:10px">
@@ -318,6 +333,7 @@
         setups: [...root.querySelectorAll("[data-setup]:checked")].map((x) => x.dataset.setup),
         noOverlap: root.querySelector("#bt-overlap").checked,
         stopBuf: +root.querySelector("#bt-stop").value,
+        regime: root.querySelector("#bt-regime").value,
         entryMode: root.querySelector("#bt-entry").value,
       };
       if (!c2.tfs.length || !c2.setups.length) return (status.textContent = "Kies minstens één timeframe en één setup.");
@@ -336,7 +352,7 @@
           const candles = await B.history(c2.ticker, tf, days, (p) => setP(base + part * 0.25 * p, `${lbl}: koersdata ophalen…`));
           candleCache.set(`${c2.ticker}|${tf}`, candles);
           moves[tf] = B.move(candles);
-          const t = await B.run(candles, { tf, feePct: c2.feePct, setups: c2.setups, noOverlap: c2.noOverlap, stopBuf: c2.stopBuf, entryMode: c2.entryMode }, (p) =>
+          const t = await B.run(candles, { tf, feePct: c2.feePct, setups: c2.setups, noOverlap: c2.noOverlap, stopBuf: c2.stopBuf, entryMode: c2.entryMode, regime: c2.regime }, (p) =>
             setP(base + part * (0.25 + 0.75 * p), `${lbl}: ${candles.length} candles doorlopen… ${Math.round(p * 100)}%`)
           );
           trades.push(...t);

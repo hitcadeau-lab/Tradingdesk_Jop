@@ -80,6 +80,27 @@ window.TD = window.TD || {};
     return { result, R: gross - fee, gross, fee, exitI, r1, r2 };
   }
 
+  // ---------- marktfase ----------
+  // Efficiency ratio over de laatste n candles: netto beweging / afgelegde weg.
+  // Laag (< 0,12) = de koers gaat heen en weer (zijwaarts); hoog = een duidelijke trend.
+  const REGIME_N = 100;
+  function regime(c, t, n = REGIME_N) {
+    if (t < n) return "onbekend";
+    const net = c[t].close - c[t - n].close;
+    let path = 0;
+    for (let i = t - n + 1; i <= t; i++) path += Math.abs(c[i].close - c[i - 1].close);
+    const er = path ? Math.abs(net) / path : 0;
+    return er < 0.12 ? "zijwaarts" : net > 0 ? "stijgend" : "dalend";
+  }
+  // Mag deze trade volgens het marktfilter? all = alles; side = alleen zijwaartse markt;
+  // with = zijwaarts, of in een trend alleen met de trend mee.
+  function regimeAllows(filter, reg, direction) {
+    if (!filter || filter === "all") return true;
+    if (filter === "side") return reg === "zijwaarts";
+    if (filter === "with") return reg === "zijwaarts" || reg === "onbekend" || (reg === "stijgend" ? direction === "Long" : direction === "Short");
+    return true;
+  }
+
   // ---------- de backtest ----------
   // opts: { tf, feePct, setups: ["Reclaim","Breakout"], noOverlap }
   async function run(candles, opts, onProgress) {
@@ -99,6 +120,8 @@ window.TD = window.TD || {};
         if (seen.has(f.key) || !opts.setups.includes(f.setup)) continue;
         seen.add(f.key);
         if (opts.noOverlap && t <= busyUntil) continue;
+        const reg = regime(candles, t);
+        if (!regimeAllows(opts.regime, reg, f.sig.direction)) continue;
         const signal = { ...f.sig, setup: f.setup };
         // Finetunen: stop verder voorbij de lont en/of entry met een limit op de rand.
         const h = f.range.high - f.range.low, long = signal.direction === "Long";
@@ -121,7 +144,7 @@ window.TD = window.TD || {};
           i: t, time: candles[t].time, tf, setup: f.setup, direction: signal.direction,
           entry: signal.entry, stopLoss: signal.stopLoss, tp1: signal.tp1, tp2: signal.tp2,
           range: { low: f.range.low, high: f.range.high, mid: f.range.mid, startTime: f.range.startTime, endTime: f.range.endTime, kind: f.range.kind },
-          verdict: verdict.key, verdictLabel: verdict.label,
+          verdict: verdict.key, verdictLabel: verdict.label, regime: reg,
           checks: checks.map((c) => ({ id: c.id, label: c.label, state: c.state })),
           pass: checks.filter((c) => c.state === "pass").length,
           warn: checks.filter((c) => c.state === "warn").length,
@@ -198,6 +221,19 @@ window.TD = window.TD || {};
         else if (diff <= -0.15) tips.push({ tone: "warn", text: `“${c.label}” filtert vooral winners weg: oranje/rood deed het beter (${bad.expectancy.toFixed(2)}R) dan groen (${good.expectancy.toFixed(2)}R). Overweeg deze check te versoepelen.` });
       }
     }
+    // Marktfase: werkt de strategie beter in een zijwaartse markt, of met de trend mee?
+    const done = list.filter((x) => x.R !== null && x.regime);
+    const side = stats(done.filter((x) => x.regime === "zijwaarts"));
+    const withT = stats(done.filter((x) => (x.regime === "stijgend" && x.direction === "Long") || (x.regime === "dalend" && x.direction === "Short")));
+    const against = stats(done.filter((x) => (x.regime === "stijgend" && x.direction === "Short") || (x.regime === "dalend" && x.direction === "Long")));
+    if (side.n >= 8 && withT.n >= 8) {
+      if (withT.expectancy - side.expectancy >= 0.25)
+        tips.push({ tone: "pos", text: `Met de trend mee werkte beter (${withT.expectancy.toFixed(2)}R per trade, ${withT.n} trades) dan in een zijwaartse markt (${side.expectancy.toFixed(2)}R). Probeer het marktfilter “Zijwaarts, of met de trend mee”, en check het in een andere periode: één trendjaar kan dit kleuren.` });
+      else if (side.expectancy - withT.expectancy >= 0.25)
+        tips.push({ tone: "pos", text: `In een zijwaartse markt werkte de strategie beter (${side.expectancy.toFixed(2)}R) dan met de trend mee (${withT.expectancy.toFixed(2)}R). Probeer het marktfilter “Alleen in een zijwaartse markt”.` });
+    }
+    if (against.n >= 8 && against.expectancy < -0.3)
+      tips.push({ tone: "warn", text: `Tegen de trend in verloor je gemiddeld ${against.expectancy.toFixed(2)}R per trade (${against.n} trades). Sla die setups over.` });
     let verdict;
     const base = play.n >= 15 ? play : playDoubt;
     const label = play.n >= 15 ? "Speelbaar" : "Speelbaar + Twijfel";
@@ -208,5 +244,5 @@ window.TD = window.TD || {};
     return { all, play, playDoubt, verdict, tips };
   }
 
-  TD.backtest = { history, run, simulate, move, stats, signalGroup, SIGNAL_ORDER, perCheck, conclude, TF_SEC, WINDOW };
+  TD.backtest = { history, run, simulate, move, regime, regimeAllows, stats, signalGroup, SIGNAL_ORDER, perCheck, conclude, TF_SEC, WINDOW };
 })(window.TD);
