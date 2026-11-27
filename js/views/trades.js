@@ -850,6 +850,14 @@
         btn.textContent = "Plan vastleggen…";
         o.plan = makePlan(o, S.riskAmount(o, S.computePortfolio()));
         o.snapshot = await marketSnapshot(o);
+        // Beoordeling op de range-principes vastleggen, zoals het er bij het plaatsen voor stond.
+        if (TD.tradeReview) {
+          try {
+            o.assessment = TD.tradeReview.assessTrade(o);
+          } catch {
+            o.assessment = null;
+          }
+        }
       }
       // Papier-order bij Kraken: eerst controleren en bevestigen.
       const wantsPaper = exSec && !exSec.hidden && root.querySelector("#ex-on").checked;
@@ -913,6 +921,47 @@
         );
       box.scrollIntoView({ behavior: "smooth" });
     }
+  }
+
+  // ---------------- Beoordeling op de range-principes ----------------
+  // Gemaakt met het marktbeeld van het moment van plaatsen (zoals in Advise), plus een leerpunt
+  // dat de beoordeling naast de uitkomst legt.
+  function reviewSectionHTML(t) {
+    if (!TD.tradeReview) return "";
+    let a = t.assessment;
+    if (!a && t.snapshot) {
+      try {
+        a = TD.tradeReview.assessTrade(t);
+        if (a) S.saveTrade({ ...S.getTrade(t.id), assessment: a }); // eenmalig berekenen en bewaren
+      } catch {
+        a = null;
+      }
+    }
+    if (!a)
+      return `<section class="panel span2"><h2>Beoordeling op de range-principes</h2><p class="muted">Niet beschikbaar: ${
+        t.snapshot ? "vul range high en low, entry en stop in om de beoordeling te zien" : "deze trade heeft geen marktbeeld van het moment van plaatsen"
+      }.</p></section>`;
+    const MARK = { pass: "✓", warn: "!", fail: "✗", info: "i" };
+    const n = (st) => a.checks.filter((c) => c.state === st).length;
+    const les = TD.tradeReview.lesson(t, a);
+    return `<section class="panel span2 review">
+      <div class="row gap between">
+        <h2>Beoordeling op de range-principes <span class="muted small">— bij het plaatsen${a.at ? `, ${date(a.at, true)}` : ""}</span></h2>
+        <span class="badge verdict ${esc(a.verdict.key)}">${esc(a.verdict.label)}</span>
+      </div>
+      <div class="verdict-score"><span class="pos">✓ ${n("pass")} in orde</span><span class="warn-text">! ${n("warn")} let op</span><span class="neg">✗ ${n("fail")} niet in orde</span></div>
+      ${
+        les
+          ? `<div class="review-lesson ${les.tone}"><strong>${esc(les.title)}</strong><p>${esc(les.text)}</p></div>`
+          : t.status === "open"
+          ? `<p class="muted small">Het leerpunt verschijnt hier zodra de trade gesloten is.</p>`
+          : ""
+      }
+      <ul class="principles">${a.checks
+        .map((c) => `<li class="${c.state}"><span class="mark">${MARK[c.state]}</span><div><div class="p-label">${esc(c.label)}</div><div class="p-text">${esc(c.text)}</div></div></li>`)
+        .join("")}</ul>
+      <p class="muted small">Zelfde beoordeling als in Advise, met de grafiek van het moment dat je de trade plaatste. ${esc(a.verdict.text)}</p>
+    </section>`;
   }
 
   // ---------------- Marktbeeld na afloop ----------------
@@ -1150,6 +1199,7 @@
         </section>`
             : ""
         }
+        ${reviewSectionHTML(t)}
       </div>`;
 
     mountSnapshot(root.querySelector("#snap-chart"), t);

@@ -510,3 +510,11 @@ label.inline { flex-direction: row; align-items: center; gap: 8px; font-size: 13
 .draw-result.ok { border-color: rgba(38, 166, 154, .6); }
 .draw-result.close { border-color: rgba(245, 166, 35, .6); }
 .draw-result.bad { border-color: rgba(239, 83, 80, .6); }
+/* Trade-detail: beoordeling op de range-principes */
+.review .verdict-score { display: flex; gap: 16px; margin: 4px 0 10px; font-size: 13px; }
+.review-lesson { border: 1px solid var(--border); border-left: 4px solid var(--border); border-radius: 8px; padding: 10px 12px; margin-bottom: 12px; background: var(--panel-2); }
+.review-lesson p { margin: 4px 0 0; color: var(--muted); }
+.review-lesson.pos { border-left-color: var(--pos); }
+.review-lesson.info { border-left-color: var(--accent); }
+.review-lesson.warn { border-left-color: var(--warn); }
+.review-lesson.neg { border-left-color: var(--neg); }
