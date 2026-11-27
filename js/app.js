@@ -81,6 +81,8 @@
 
   TD.app = { rerender };
   if (TD.markets) TD.markets.migrate(); // eenmalig: alles naar Kraken
+  // Stop-buffer voorbij de lont (reclaims) uit Instellingen → Trading, voor Notifier, Advise en Backtest.
+  if (TD.rangeEngine) TD.rangeEngine.DEFAULTS.stopBuffer = +TD.store.getSettings().stopBuffer;
   route();
   if (TD.inbox) {
     TD.inbox.onChange(paintBell);

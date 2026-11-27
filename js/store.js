@@ -183,7 +183,7 @@ window.TD = window.TD || {};
   // ---------- Settings ----------
   function getSettings() {
     const s = load(KEYS.settings, {});
-    return { startingCapital: 1000, currency: "$", defaultRisk: 1, ...s };
+    return { startingCapital: 1000, currency: "$", defaultRisk: 1, stopBuffer: 0.2, ...s };
   }
   function setSettings(patch) {
     save(KEYS.settings, { ...getSettings(), ...patch });

@@ -238,7 +238,7 @@ window.TD = window.TD || {};
         .map(([k, t]) => `<button type="button" class="btn small" data-tool="${k}" title="${t.label} (toets ${t.key.toUpperCase()})">${k === "range" ? "▭ " : ""}${t.label}</button>`)
         .join("")}
       <span class="sep"></span>
-      <button type="button" class="btn small" data-act="sl-suggest" title="Stop net voorbij de lont van de deviatie">Stop-voorstel</button>
+      <button type="button" class="btn small" data-act="sl-suggest" title="Stop voorbij de lont van de deviatie, met de stop-buffer uit Instellingen">Stop-voorstel</button>
       <button type="button" class="btn small active" data-act="magnet" title="Klik springt naar high, low, open of close van de candle">🧲 Magneet</button>
       <button type="button" class="btn small" data-act="undo" title="Ongedaan maken (Cmd+Z)">↶ Ongedaan</button>
       <button type="button" class="btn small" data-act="clear">✕ Alles wissen</button>`;
@@ -260,7 +260,7 @@ window.TD = window.TD || {};
     });
 
     // Stop-voorstel volgens de methode: net voorbij de laagste lont (long) of hoogste lont (short)
-    // rond de rand van de range sinds het einde van de push, met 3% van de range-hoogte marge.
+    // rond de rand van de range sinds het einde van de push, plus de stop-buffer (Instellingen → Trading).
     function suggestStop() {
       const v = opts.get();
       if (v.rangeHigh === "" || v.rangeLow === "" || v.entry === "" || v.rangeHigh == null || v.entry == null) return null;
@@ -270,11 +270,12 @@ window.TD = window.TD || {};
       const from = v.rangeTo ? candles.filter((c) => c.time > +v.rangeTo) : candles.slice(-60);
       const recent = from.length ? from : candles.slice(-60);
       const ext = long ? Math.min(L, ...recent.map((c) => c.low)) : Math.max(H, ...recent.map((c) => c.high));
-      const price = round(long ? ext - 0.03 * h : ext + 0.03 * h);
+      const buf = +((TD.store && TD.store.getSettings().stopBuffer) ?? 0.2);
+      const price = round(long ? ext - buf * h : ext + buf * h);
       return {
         price,
         direction: long ? "Long" : "Short",
-        why: `Stop net ${long ? "onder" : "boven"} de ${ext === (long ? L : H) ? (long ? "range low" : "range high") : "lont van de deviatie"} (${round(ext)}), met 3% van de range als marge.`,
+        why: `Stop net ${long ? "onder" : "boven"} de ${ext === (long ? L : H) ? (long ? "range low" : "range high") : "lont van de deviatie"} (${round(ext)}), met ${Math.round(buf * 100)}% van de range als ademruimte (Instellingen → Trading).`,
       };
     }
 

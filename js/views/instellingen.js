@@ -290,7 +290,9 @@
           <label>Startkapitaal<input type="number" id="set-capital" step="any" min="0" value="${esc(s.startingCapital)}"></label>
           <label>Valuta<select id="set-currency">${["$", "€", "USDT "].map((c) => `<option ${c === s.currency ? "selected" : ""}>${c}</option>`).join("")}</select></label>
           <label>Standaard risico % per trade<input type="number" id="set-risk" step="0.1" min="0" value="${esc(s.defaultRisk)}"></label>
+          <label>Stop-buffer voorbij de lont (reclaims)<select id="set-stopbuf">${[[0.03, "3% van de range (krap)"], [0.1, "10% van de range"], [0.2, "20% van de range (aanbevolen)"], [0.3, "30% van de range"]].map(([v, l]) => `<option value="${v}" ${+s.stopBuffer === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
         </div>
+        <p class="muted small">Stop-buffer: hoe ver je stop voorbij de lont van de deviatie staat. Gebruikt door de Notifier, Advise, het stop-voorstel en de Backtest. In de backtest op BTC 1H steeg de winrate van reclaims van 26% (3%) naar 42% (20%). Breakouts en patronen gebruiken hun eigen stop.</p>
         <p class="muted small">Het startkapitaal is de basis van je saldo, rendement en equity curve in Portfolio. Het standaard risico wordt ingevuld bij elke nieuwe trade.</p>
         <p class="saved small" id="trading-saved" hidden>Opgeslagen</p>
       </section>
@@ -371,12 +373,14 @@
         startingCapital: +root.querySelector("#set-capital").value || 0,
         currency: root.querySelector("#set-currency").value,
         defaultRisk: Math.max(0, +root.querySelector("#set-risk").value || 0),
+        stopBuffer: +root.querySelector("#set-stopbuf").value,
       });
+      if (TD.rangeEngine) TD.rangeEngine.DEFAULTS.stopBuffer = +root.querySelector("#set-stopbuf").value;
       savedNote.hidden = false;
       clearTimeout(saveTrading.t);
       saveTrading.t = setTimeout(() => (savedNote.hidden = true), 1500);
     };
-    ["#set-capital", "#set-currency", "#set-risk"].forEach((sel) => root.querySelector(sel).addEventListener("change", saveTrading));
+    ["#set-capital", "#set-currency", "#set-risk", "#set-stopbuf"].forEach((sel) => root.querySelector(sel).addEventListener("change", saveTrading));
 
     // ---- opslag ----
     if (d) {

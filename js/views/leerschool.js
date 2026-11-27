@@ -406,16 +406,19 @@
     const short = rand() < 0.5;
     let { candles, extreme } = lowEvent(rand, R, "retest");
     const n = candles.length;
-    let A = extreme - R.h * 0.04, B = R.low + R.h * 0.02, Cc = R.mid;
+    // A = voorbij de lont mét ademruimte (±20% van de range), B = precies op de lont,
+    // C = net onder de range low (binnen de deviatie), D = de mid.
+    let A = extreme - R.h * 0.2, B = extreme - R.h * 0.004, Cc = R.low + R.h * 0.02, Dd = R.mid;
     if (short) {
       candles = mirror(candles, R);
-      [A, B, Cc] = [A, B, Cc].map((p) => mp(R, p));
+      [A, B, Cc, Dd] = [A, B, Cc, Dd].map((p) => mp(R, p));
     }
-    const letters = shuffle(rand, ["A", "B", "C"]);
+    const letters = shuffle(rand, ["A", "B", "C", "D"]);
     const pts = [
-      { p: A, l: letters[0], good: true, why: `Net voorbij de deviatie. Daar is je idee ongeldig: komt de koers daar, dan was de reclaim fout en zit je ‘in een andere structuur’.` },
-      { p: B, l: letters[1], good: false, why: `Net ${short ? "boven de range high" : "onder de range low"} zit binnen het bereik van de deviatie. Een nieuwe wick naar hetzelfde gebied stopt je uit, terwijl je idee nog klopt.` },
-      { p: Cc, l: letters[2], good: false, why: `De mid ligt ${short ? "onder" : "boven"} je entry: dat is je TP1, geen stoploss.` },
+      { p: A, l: letters[0], good: true, why: `Voorbij de lont van de deviatie, met ademruimte (±20% van de range). Daar is je idee ongeldig, en een nieuwe lont of wat ruis stopt je niet onnodig uit. In onze backtest op BTC steeg de winrate van reclaims daarmee van 26% naar 42%.` },
+      { p: B, l: letters[1], good: false, why: "Precies op de lont: de minste ruis of een tweede tik naar hetzelfde niveau stopt je uit, terwijl je idee nog klopt. Geef je stop ademruimte voorbij de lont." },
+      { p: Cc, l: letters[2], good: false, why: `Net ${short ? "boven de range high" : "onder de range low"} zit binnen het bereik van de deviatie. Een nieuwe lont naar hetzelfde gebied stopt je uit, terwijl je idee nog klopt.` },
+      { p: Dd, l: letters[3], good: false, why: `De mid ligt ${short ? "onder" : "boven"} je entry: dat is je TP1, geen stoploss.` },
     ];
     return {
       cat: "sltp",
@@ -423,7 +426,7 @@
       prompt: `Je gaat <strong>${short ? "short" : "long"}</strong> op de retest na de deviatie. Waar plaats je je stoploss?`,
       svg: C.candleSVG(candles, { lines: rangeLines(R), markers: pts.map((x) => ({ i: n - 1, price: x.p, label: x.l })) }),
       options: shuffle(rand, pts).map((x) => (x.good ? ok : no)("Punt " + x.l, x.why)),
-      lesson: "Je stop gaat voorbij de deviatie of swing failure: het punt waarop je idee ongeldig is. Check altijd of de R:R tot TP1 dan nog goed is.",
+      lesson: "Je stop gaat voorbij de deviatie of swing failure (het punt waarop je idee ongeldig is), met ademruimte: ±20% van de range voorbij de lont. Check daarna of de R:R tot TP1 nog goed is; je positie wordt kleiner bij hetzelfde risico %.",
     };
   });
 

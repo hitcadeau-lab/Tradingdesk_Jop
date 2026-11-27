@@ -276,7 +276,7 @@
     teardown();
     const last = loadLast();
     const wl = S.getWatchlist();
-    const cfg = { ticker: (wl[0] && wl[0].symbol) || "KRAKEN:PF_XBTUSD", tfs: ["1h", "4h"], days: 180, setups: ["Reclaim", "Breakout"], feePct: 0.05, noOverlap: false, stopBuf: 0.03, entryMode: "close", ...(last ? last.cfg : {}) };
+    const cfg = { ticker: (wl[0] && wl[0].symbol) || "KRAKEN:PF_XBTUSD", tfs: ["1h", "4h"], days: 180, setups: ["Reclaim", "Breakout"], feePct: 0.05, noOverlap: false, stopBuf: +S.getSettings().stopBuffer || 0.2, entryMode: "close", ...(last ? last.cfg : {}) };
     root.innerHTML = `
       <div class="page-head">
         <div><h1>Backtest</h1><div class="muted small">Test je strategie op de historie: hoe deden de setups het met alles groen, één oranje, een rode, enzovoort?</div></div>
@@ -288,7 +288,7 @@
           <label>Fee per kant (%)<input type="number" id="bt-fee" step="0.01" min="0" value="${cfg.feePct}"></label>
           <div><div class="label">Timeframes</div>${TFS.map(([k, l]) => `<label class="chk inline-chk"><input type="checkbox" data-tf="${k}" ${cfg.tfs.includes(k) ? "checked" : ""}> ${l}</label>`).join("")}</div>
           <div><div class="label">Setups</div>${["Reclaim", "Breakout"].map((s) => `<label class="chk inline-chk"><input type="checkbox" data-setup="${s}" ${cfg.setups.includes(s) ? "checked" : ""}> ${s}</label>`).join("")}</div>
-          <label>Stop voorbij de lont<select id="bt-stop">${[[0.03, "3% van de range (standaard)"], [0.1, "10% van de range"], [0.2, "20% van de range"], [0.3, "30% van de range"]].map(([v, l]) => `<option value="${v}" ${+cfg.stopBuf === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
+          <label>Stop voorbij de lont<select id="bt-stop">${[[0.03, "3% van de range (krap)"], [0.1, "10% van de range"], [0.2, "20% van de range (aanbevolen)"], [0.3, "30% van de range"]].map(([v, l]) => `<option value="${v}" ${+cfg.stopBuf === v ? "selected" : ""}>${l}</option>`).join("")}</select></label>
           <label>Entry<select id="bt-entry"><option value="close" ${cfg.entryMode !== "edge" ? "selected" : ""}>Op de close van de trigger-candle (standaard)</option><option value="edge" ${cfg.entryMode === "edge" ? "selected" : ""}>Limit op de rand (alleen als de koers terugkomt)</option></select></label>
           <label class="chk span2"><input type="checkbox" id="bt-overlap" ${cfg.noOverlap ? "checked" : ""}> Maximaal 1 trade tegelijk per timeframe (realistischer als je één positie tegelijk aanhoudt)</label>
         </div>

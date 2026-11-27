@@ -91,7 +91,7 @@ window.TD = window.TD || {};
     const chunk = 150;
     for (let t = WINDOW; t < n; t++) {
       const w = candles.slice(t - WINDOW + 1, t + 1);
-      const a = E.analyze(w);
+      const a = E.analyze(w, { stopBuffer: opts.stopBuf ?? E.DEFAULTS.stopBuffer });
       const found = [];
       if (a.range && a.signal && a.signal.status === "trigger") found.push({ setup: "Reclaim", range: a.range, sig: a.signal, key: `R|${a.signal.direction}|${a.signal.reclaimTime}` });
       if (a.breakout && a.breakout.signal.status === "trigger") found.push({ setup: "Breakout", range: a.breakout.range, sig: a.breakout.signal, key: `B|${a.breakout.signal.direction}|${a.breakout.signal.breakoutTime}` });
@@ -102,8 +102,6 @@ window.TD = window.TD || {};
         const signal = { ...f.sig, setup: f.setup };
         // Finetunen: stop verder voorbij de lont en/of entry met een limit op de rand.
         const h = f.range.high - f.range.low, long = signal.direction === "Long";
-        const extra = ((opts.stopBuf ?? 0.03) - 0.03) * h;
-        if (extra) signal.stopLoss = long ? signal.stopLoss - extra : signal.stopLoss + extra;
         if (opts.entryMode === "edge") signal.entry = f.setup === "Breakout" ? (long ? f.range.high : f.range.low) : long ? f.range.low : f.range.high;
         const risk = Math.abs(signal.entry - signal.stopLoss);
         if (!(risk > 0) || (long ? signal.stopLoss >= signal.entry : signal.stopLoss <= signal.entry)) continue;

@@ -20,6 +20,7 @@
     retestZone: 0.06, // retest = low binnen 6% van de range low (of high bij short)
     minRR: 1.0, // minimale R:R tot TP1 (mid)
     acceptBars: 6, // zoveel closes op rij buiten de range = breakout (acceptatie)
+    stopBuffer: 0.2, // reclaim: stop zoveel (deel van de range-hoogte) voorbij de lont van de deviatie
     breakoutLookback: 40, // de uitbraak moet in de laatste zoveel candles vallen
     breakoutFail: 0.1, // close dieper dan 10% terug in de range = breakout mislukt
     breakoutSl: 0.08, // SL minstens 8% van de range-hoogte terug binnen de oude range
@@ -217,7 +218,7 @@
       const touched = long ? c[i].low <= edge + o.retestZone * R.height : c[i].high >= edge - o.retestZone * R.height;
       if (touched && inside(c[i])) retest = i;
     }
-    const sl = long ? extreme - 0.03 * R.height : extreme + 0.03 * R.height;
+    const sl = long ? extreme - o.stopBuffer * R.height : extreme + o.stopBuffer * R.height;
     const entry = retest >= 0 ? last.close : edge;
     const tp1 = R.mid;
     const tp2 = long ? R.high : R.low;
@@ -410,7 +411,7 @@
     const long = direction === "Long";
     const h = range.high - range.low;
     const entry = long ? range.low : range.high;
-    const stopLoss = long ? range.low - (buffer + 0.03) * h : range.high + (buffer + 0.03) * h;
+    const stopLoss = long ? range.low - (buffer + DEFAULTS.stopBuffer) * h : range.high + (buffer + DEFAULTS.stopBuffer) * h;
     const tp1 = range.mid;
     const tp2 = long ? range.high : range.low;
     return {
