@@ -76,12 +76,14 @@
       status: query.get("status") || "",
       ticker: query.get("ticker") || "",
       setup: query.get("setup") || "",
+      tf: query.get("tf") || "",
     };
     const tickers = [...new Set(all.map((t) => t.ticker))].sort();
     const list = all
       .filter((t) => !f.status || t.status === f.status)
       .filter((t) => !f.ticker || t.ticker === f.ticker)
       .filter((t) => !f.setup || t.setup === f.setup)
+      .filter((t) => !f.tf || (t.rangeTf || "") === f.tf)
       .sort((a, b) => (b.entryDate || "").localeCompare(a.entryDate || ""));
 
     const sel = (name, label, opts) =>
@@ -102,19 +104,21 @@
         ${sel("status", "Status", [{ v: "open", l: "Open" }, { v: "closed", l: "Gesloten" }])}
         ${sel("ticker", "Ticker", tickers)}
         ${sel("setup", "Setup", S.OPTIONS.setup)}
+        ${sel("tf", "Timeframe", S.OPTIONS.rangeTf.filter((x) => all.some((t) => t.rangeTf === x)))}
         <span class="muted">${list.length} trade${list.length === 1 ? "" : "s"}</span>
       </div>
       <div class="panel">
       ${
         list.length
           ? `<table class="table clickable"><thead><tr>
-            <th>Datum</th><th>Ticker</th><th>Richting</th><th>Setup</th><th>Type</th><th>Checks</th>
+            <th>Datum</th><th>Ticker</th><th title="Range-timeframe (leading)">TF</th><th>Richting</th><th>Setup</th><th>Type</th><th>Checks</th>
             <th>Status</th><th class="num">R/R plan</th><th class="num">R</th><th class="num">PnL</th></tr></thead><tbody>
             ${list
               .map((t) => {
                 const row = p.rows.get(t.id);
                 return `<tr data-href="#/trades/${t.id}">
                   <td>${date(t.entryDate)}</td><td><strong>${esc(shortSym(t.ticker))}</strong></td>
+                  <td>${t.rangeTf ? `<span class="badge muted">${esc(t.rangeTf)}</span>` : '<span class="muted">—</span>'}</td>
                   <td><span class="dir ${t.direction === "Long" ? "pos" : "neg"}">${esc(t.direction)}</span></td>
                   <td>${esc(t.setup)}</td><td>${esc(t.tradeType)}</td><td>${scoreBadge(t)}</td>
                   <td>${statusBadge(t)}</td><td class="num">${r(S.totalRR(t))}</td>
@@ -123,7 +127,7 @@
               })
               .join("")}
             </tbody></table>`
-          : `<div class="empty">Nog geen trades${f.status || f.ticker || f.setup ? " met deze filters" : ""}. <a href="#/trades/new">Plaats je eerste trade</a>.</div>`
+          : `<div class="empty">Nog geen trades${f.status || f.ticker || f.setup || f.tf ? " met deze filters" : ""}. <a href="#/trades/new">Plaats je eerste trade</a>.</div>`
       }
       </div>`;
 
